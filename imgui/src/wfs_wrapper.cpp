@@ -1,0 +1,325 @@
+#include "wfs_wrapper.h"
+#include <fstream>
+#include <algorithm>
+#include <sys/stat.h>
+
+static bool file_exists(const std::string& path) {
+    struct stat buffer;
+    return (stat(path.c_str(), &buffer) == 0);
+}
+
+static size_t file_size(const std::string& path) {
+    struct stat buffer;
+    if (stat(path.c_str(), &buffer) == 0) {
+        return buffer.st_size;
+    }
+    return 0;
+}
+
+std::string WfsManager::GetErrorDescription(ConnectError error) {
+    switch (error) {
+        case ConnectError::None:
+            return "Success";
+        case ConnectError::OtpNotFound:
+            return "OTP file not found";
+        case ConnectError::SeepromNotFound:
+            return "SEEPROM file not found";
+        case ConnectError::OtpInvalidSize:
+            return "Invalid OTP file size (expected 1024 bytes)";
+        case ConnectError::SeepromInvalidSize:
+            return "Invalid SEEPROM file size (expected 512 bytes)";
+        case ConnectError::DeviceNotFound:
+            return "Device/partition not found or inaccessible";
+        case ConnectError::DeviceOpenFailed:
+            return "Failed to open device (may need Administrator privileges)";
+        case ConnectError::NotWfsPartition:
+            return "Not a Wii U WFS partition (invalid header)";
+        case ConnectError::InvalidWfsVersion:
+            return "Invalid WFS version (partition may be corrupted)";
+        case ConnectError::KeyMismatch:
+            return "Key mismatch (wrong OTP/SEEPROM for this partition)";
+        case ConnectError::UnknownError:
+        default:
+            return "Unknown error";
+    }
+}
+
+ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+    Disconnect();
+    
+    // 检查 OTP 文件
+    if (!file_exists(otpPath)) {
+        return ConnectError::OtpNotFound;
+    }
+    if (file_size(otpPath) != OTP::OTP_SIZE) {
+        return ConnectError::OtpInvalidSize;
+    }
+    
+    // 检查 SEEPROM 文件
+    if (!file_exists(seepromPath)) {
+        return ConnectError::SeepromNotFound;
+    }
+    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+        return ConnectError::SeepromInvalidSize;
+    }
+    
+    // 检查设备
+    if (!file_exists(devicePath)) {
+        return ConnectError::DeviceNotFound;
+    }
+    
+    try {
+        // 加载 OTP 和 SEEPROM
+        auto otp = OTP::LoadFromFile(otpPath);
+        if (!otp) {
+            return ConnectError::OtpNotFound;
+        }
+        
+        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
+        if (!seeprom) {
+            return ConnectError::SeepromNotFound;
+        }
+        
+        key_ = seeprom->GetUSBKey(*otp);
+        devicePath_ = devicePath;
+        
+        // 创建设备 (读写模式)
+        std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
+        if (!testFile.is_open()) {
+            return ConnectError::DeviceOpenFailed;
+        }
+        uint64_t fileSize = testFile.tellg();
+        testFile.close();
+        uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
+        
+        device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
+        
+        // 打开 WFS
+        auto result = WfsDevice::Open(device_, key_);
+        if (!result) {
+            device_.reset();
+            // 根据具体错误返回
+            switch (result.error()) {
+                case WfsError::kAreaHeaderCorrupted:
+                    return ConnectError::NotWfsPartition;
+                case WfsError::kInvalidWfsVersion:
+                    return ConnectError::InvalidWfsVersion;
+                case WfsError::kBlockBadHash:
+                    return ConnectError::KeyMismatch;
+                default:
+                    return ConnectError::UnknownError;
+            }
+        }
+        wfs_ = *result;
+        return ConnectError::None;
+    } catch (const std::runtime_error& e) {
+        // KeyFile 会抛出 runtime_error 如果大小不对
+        std::string msg = e.what();
+        if (msg.find("key file size") != std::string::npos) {
+            if (msg.find("OTP") != std::string::npos || msg.find("1024") != std::string::npos) {
+                return ConnectError::OtpInvalidSize;
+            }
+            return ConnectError::SeepromInvalidSize;
+        }
+        return ConnectError::UnknownError;
+    } catch (...) {
+        return ConnectError::UnknownError;
+    }
+}
+
+ConnectError WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+    Disconnect();
+    
+    // 检查 OTP 文件
+    if (!file_exists(otpPath)) {
+        return ConnectError::OtpNotFound;
+    }
+    if (file_size(otpPath) != OTP::OTP_SIZE) {
+        return ConnectError::OtpInvalidSize;
+    }
+    
+    // 检查 SEEPROM 文件
+    if (!file_exists(seepromPath)) {
+        return ConnectError::SeepromNotFound;
+    }
+    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+        return ConnectError::SeepromInvalidSize;
+    }
+    
+    // 检查设备
+    if (!file_exists(devicePath)) {
+        return ConnectError::DeviceNotFound;
+    }
+    
+    try {
+        // 加载 OTP 和 SEEPROM
+        auto otp = OTP::LoadFromFile(otpPath);
+        if (!otp) {
+            return ConnectError::OtpNotFound;
+        }
+        
+        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
+        if (!seeprom) {
+            return ConnectError::SeepromNotFound;
+        }
+        
+        key_ = seeprom->GetUSBKey(*otp);
+        devicePath_ = devicePath;
+        
+        // 创建设备 (读写模式)
+        std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
+        if (!testFile.is_open()) {
+            return ConnectError::DeviceOpenFailed;
+        }
+        uint64_t fileSize = testFile.tellg();
+        testFile.close();
+        uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
+        
+        device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
+        
+        // 创建新的 WFS (格式化)
+        auto result = WfsDevice::Create(device_, key_);
+        if (!result) {
+            device_.reset();
+            return ConnectError::UnknownError;
+        }
+        wfs_ = *result;
+        wfs_->Flush();
+        return ConnectError::None;
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        if (msg.find("key file size") != std::string::npos) {
+            if (msg.find("OTP") != std::string::npos || msg.find("1024") != std::string::npos) {
+                return ConnectError::OtpInvalidSize;
+            }
+            return ConnectError::SeepromInvalidSize;
+        }
+        return ConnectError::UnknownError;
+    } catch (...) {
+        return ConnectError::UnknownError;
+    }
+}
+
+void WfsManager::Disconnect() {
+    if (wfs_) {
+        wfs_->Flush();
+    }
+    wfs_.reset();
+    device_.reset();
+    key_.clear();
+    devicePath_.clear();
+}
+
+std::vector<DirEntry> WfsManager::ListDirectory(const std::string& path) {
+    std::vector<DirEntry> entries;
+    if (!wfs_) return entries;
+    
+    try {
+        auto dir = wfs_->GetDirectory(path);
+        if (!dir) return entries;
+        
+        for (const auto& item : *dir) {
+            if (item.entry.has_value()) {
+                DirEntry entry;
+                entry.name = item.name;
+                auto e = item.entry.value();
+                entry.is_directory = e->is_directory();
+                if (!entry.is_directory && e->is_file()) {
+                    auto file = std::dynamic_pointer_cast<File>(e);
+                    if (file) {
+                        entry.size = file->Size();
+                    }
+                } else {
+                    entry.size = 0;
+                }
+                entries.push_back(entry);
+            }
+        }
+    } catch (...) {}
+    
+    return entries;
+}
+
+bool WfsManager::DeleteEntry(const std::string& parentPath, const std::string& name, bool isDirectory) {
+    if (!wfs_) return false;
+    
+    try {
+        auto dir = wfs_->GetDirectory(parentPath);
+        if (!dir) return false;
+        
+        if (isDirectory) {
+            auto result = dir->DeleteDirectory(name, true);
+            return result.has_value();
+        } else {
+            auto result = dir->DeleteFile(name);
+            return result.has_value();
+        }
+    } catch (...) {
+        return false;
+    }
+}
+
+bool WfsManager::ImportFile(const std::string& sourcePath, const std::string& targetDir, const std::string& name) {
+    if (!wfs_) return false;
+    
+    try {
+        auto dir = wfs_->GetDirectory(targetDir);
+        if (!dir) return false;
+        
+        // 读取源文件
+        std::ifstream file(sourcePath, std::ios::binary | std::ios::ate);
+        size_t fileSize = file.tellg();
+        file.seekg(0);
+        
+        std::vector<std::byte> data(fileSize);
+        file.read(reinterpret_cast<char*>(data.data()), fileSize);
+        
+        auto result = dir->CreateFile(name, data);
+        return result.has_value();
+    } catch (...) {
+        return false;
+    }
+}
+
+bool WfsManager::ExportFile(const std::string& sourcePath, const std::string& targetPath) {
+    if (!wfs_) return false;
+    
+    try {
+        auto wfsFile = wfs_->GetFile(sourcePath);
+        if (!wfsFile) return false;
+        
+        File::stream stream(wfsFile);
+        
+        std::ofstream outFile(targetPath, std::ios::binary);
+        std::vector<char> buffer(0x10000);
+        
+        while (stream) {
+            stream.read(buffer.data(), buffer.size());
+            outFile.write(buffer.data(), stream.gcount());
+        }
+        
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool WfsManager::CreateDirectory(const std::string& parentPath, const std::string& name) {
+    if (!wfs_) return false;
+    
+    try {
+        auto dir = wfs_->GetDirectory(parentPath);
+        if (!dir) return false;
+        
+        auto result = dir->CreateDirectory(name);
+        return result.has_value();
+    } catch (...) {
+        return false;
+    }
+}
+
+void WfsManager::Flush() {
+    if (wfs_) {
+        wfs_->Flush();
+    }
+}
