@@ -233,11 +233,6 @@ void MainWindow::OnConnect() {
         return;
     }
     
-    if (!FileExists(otpPath) || !FileExists(seepromPath)) {
-        MessageBoxA(hWnd_, "OTP or SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
-        return;
-    }
-    
     std::string drive = GetSelectedDrive();
     if (drive.empty()) {
         MessageBoxA(hWnd_, "Please select a drive.", "No Drive", MB_OK | MB_ICONWARNING);
@@ -247,9 +242,41 @@ void MainWindow::OnConnect() {
     // 构建设备路径 (\\.\X:)
     std::string devicePath = "\\\\.\\" + drive.substr(0, 2);
     
-    if (!wfs_.Connect(otpPath, seepromPath, devicePath)) {
-        MessageBoxA(hWnd_, "Failed to connect.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a Wii U partition\n- Drive is in use", 
-                   "Connection Failed", MB_OK | MB_ICONERROR);
+    ConnectError error = wfs_.Connect(otpPath, seepromPath, devicePath);
+    
+    if (error != ConnectError::None) {
+        std::string errorMsg = "Connection failed!\n\nError: " + WfsManager::GetErrorDescription(error);
+        
+        // 添加额外提示
+        switch (error) {
+            case ConnectError::OtpNotFound:
+            case ConnectError::SeepromNotFound:
+                errorMsg += "\n\nPlease check file paths.";
+                break;
+            case ConnectError::OtpInvalidSize:
+                errorMsg += "\n\nOTP file should be exactly 1024 bytes.";
+                break;
+            case ConnectError::SeepromInvalidSize:
+                errorMsg += "\n\nSEEPROM file should be exactly 512 bytes.";
+                break;
+            case ConnectError::DeviceNotFound:
+            case ConnectError::DeviceOpenFailed:
+                errorMsg += "\n\nTry running as Administrator.";
+                break;
+            case ConnectError::NotWfsPartition:
+                errorMsg += "\n\nThe selected partition is not formatted as Wii U WFS.\nYou may need to format it first.";
+                break;
+            case ConnectError::InvalidWfsVersion:
+                errorMsg += "\n\nThe partition may be corrupted or from an incompatible version.";
+                break;
+            case ConnectError::KeyMismatch:
+                errorMsg += "\n\nThe OTP/SEEPROM keys do not match this partition.\nMake sure you are using the correct OTP and SEEPROM from the same Wii U console.";
+                break;
+            default:
+                break;
+        }
+        
+        MessageBoxA(hWnd_, errorMsg.c_str(), "Connection Failed", MB_OK | MB_ICONERROR);
         return;
     }
     
@@ -295,11 +322,6 @@ void MainWindow::OnFormat() {
         return;
     }
     
-    if (!FileExists(otpPath) || !FileExists(seepromPath)) {
-        MessageBoxA(hWnd_, "OTP or SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
-        return;
-    }
-    
     std::string drive = GetSelectedDrive();
     if (drive.empty()) {
         MessageBoxA(hWnd_, "Please select a drive.", "No Drive", MB_OK | MB_ICONWARNING);
@@ -332,9 +354,21 @@ void MainWindow::OnFormat() {
     std::string devicePath = "\\\\.\\" + drive.substr(0, 2);
     
     // 执行格式化
-    if (!wfs_.Format(otpPath, seepromPath, devicePath)) {
-        MessageBoxA(hWnd_, "Failed to format.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Drive is in use or write-protected\n- Insufficient permissions (Run as Administrator)", 
-                   "Format Failed", MB_OK | MB_ICONERROR);
+    ConnectError error = wfs_.Format(otpPath, seepromPath, devicePath);
+    
+    if (error != ConnectError::None) {
+        std::string errorMsg = "Format failed!\n\nError: " + WfsManager::GetErrorDescription(error);
+        
+        switch (error) {
+            case ConnectError::DeviceNotFound:
+            case ConnectError::DeviceOpenFailed:
+                errorMsg += "\n\nTry running as Administrator.";
+                break;
+            default:
+                break;
+        }
+        
+        MessageBoxA(hWnd_, errorMsg.c_str(), "Format Failed", MB_OK | MB_ICONERROR);
         return;
     }
     

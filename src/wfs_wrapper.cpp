@@ -1,23 +1,93 @@
 #include "wfs_wrapper.h"
 #include <fstream>
 #include <algorithm>
+#include <sys/stat.h>
 
-bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+static bool file_exists(const std::string& path) {
+    struct stat buffer;
+    return (stat(path.c_str(), &buffer) == 0);
+}
+
+static size_t file_size(const std::string& path) {
+    struct stat buffer;
+    if (stat(path.c_str(), &buffer) == 0) {
+        return buffer.st_size;
+    }
+    return 0;
+}
+
+std::string WfsManager::GetErrorDescription(ConnectError error) {
+    switch (error) {
+        case ConnectError::None:
+            return "Success";
+        case ConnectError::OtpNotFound:
+            return "OTP file not found";
+        case ConnectError::SeepromNotFound:
+            return "SEEPROM file not found";
+        case ConnectError::OtpInvalidSize:
+            return "Invalid OTP file size (expected 1024 bytes)";
+        case ConnectError::SeepromInvalidSize:
+            return "Invalid SEEPROM file size (expected 512 bytes)";
+        case ConnectError::DeviceNotFound:
+            return "Device/partition not found or inaccessible";
+        case ConnectError::DeviceOpenFailed:
+            return "Failed to open device (may need Administrator privileges)";
+        case ConnectError::NotWfsPartition:
+            return "Not a Wii U WFS partition (invalid header)";
+        case ConnectError::InvalidWfsVersion:
+            return "Invalid WFS version (partition may be corrupted)";
+        case ConnectError::KeyMismatch:
+            return "Key mismatch (wrong OTP/SEEPROM for this partition)";
+        case ConnectError::UnknownError:
+        default:
+            return "Unknown error";
+    }
+}
+
+ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+    Disconnect();
+    
+    // 检查 OTP 文件
+    if (!file_exists(otpPath)) {
+        return ConnectError::OtpNotFound;
+    }
+    if (file_size(otpPath) != OTP::OTP_SIZE) {
+        return ConnectError::OtpInvalidSize;
+    }
+    
+    // 检查 SEEPROM 文件
+    if (!file_exists(seepromPath)) {
+        return ConnectError::SeepromNotFound;
+    }
+    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+        return ConnectError::SeepromInvalidSize;
+    }
+    
+    // 检查设备
+    if (!file_exists(devicePath)) {
+        return ConnectError::DeviceNotFound;
+    }
+    
     try {
-        Disconnect();
-        
         // 加载 OTP 和 SEEPROM
         auto otp = OTP::LoadFromFile(otpPath);
-        if (!otp) return false;
+        if (!otp) {
+            return ConnectError::OtpNotFound;
+        }
         
         auto seeprom = SEEPROM::LoadFromFile(seepromPath);
-        if (!seeprom) return false;
+        if (!seeprom) {
+            return ConnectError::SeepromNotFound;
+        }
         
         key_ = seeprom->GetUSBKey(*otp);
         devicePath_ = devicePath;
         
         // 创建设备 (读写模式)
         std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
+        if (!testFile.is_open()) {
+            return ConnectError::DeviceOpenFailed;
+        }
         uint64_t fileSize = testFile.tellg();
         testFile.close();
         uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
@@ -28,31 +98,79 @@ bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromP
         auto result = WfsDevice::Open(device_, key_);
         if (!result) {
             device_.reset();
-            return false;
+            // 根据具体错误返回
+            switch (result.error()) {
+                case WfsError::kAreaHeaderCorrupted:
+                    return ConnectError::NotWfsPartition;
+                case WfsError::kInvalidWfsVersion:
+                    return ConnectError::InvalidWfsVersion;
+                case WfsError::kBlockBadHash:
+                    return ConnectError::KeyMismatch;
+                default:
+                    return ConnectError::UnknownError;
+            }
         }
         wfs_ = *result;
-        return true;
+        return ConnectError::None;
+    } catch (const std::runtime_error& e) {
+        // KeyFile 会抛出 runtime_error 如果大小不对
+        std::string msg = e.what();
+        if (msg.find("key file size") != std::string::npos) {
+            if (msg.find("OTP") != std::string::npos || msg.find("1024") != std::string::npos) {
+                return ConnectError::OtpInvalidSize;
+            }
+            return ConnectError::SeepromInvalidSize;
+        }
+        return ConnectError::UnknownError;
     } catch (...) {
-        return false;
+        return ConnectError::UnknownError;
     }
 }
 
-bool WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+ConnectError WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+    Disconnect();
+    
+    // 检查 OTP 文件
+    if (!file_exists(otpPath)) {
+        return ConnectError::OtpNotFound;
+    }
+    if (file_size(otpPath) != OTP::OTP_SIZE) {
+        return ConnectError::OtpInvalidSize;
+    }
+    
+    // 检查 SEEPROM 文件
+    if (!file_exists(seepromPath)) {
+        return ConnectError::SeepromNotFound;
+    }
+    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+        return ConnectError::SeepromInvalidSize;
+    }
+    
+    // 检查设备
+    if (!file_exists(devicePath)) {
+        return ConnectError::DeviceNotFound;
+    }
+    
     try {
-        Disconnect();
-        
         // 加载 OTP 和 SEEPROM
         auto otp = OTP::LoadFromFile(otpPath);
-        if (!otp) return false;
+        if (!otp) {
+            return ConnectError::OtpNotFound;
+        }
         
         auto seeprom = SEEPROM::LoadFromFile(seepromPath);
-        if (!seeprom) return false;
+        if (!seeprom) {
+            return ConnectError::SeepromNotFound;
+        }
         
         key_ = seeprom->GetUSBKey(*otp);
         devicePath_ = devicePath;
         
         // 创建设备 (读写模式)
         std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
+        if (!testFile.is_open()) {
+            return ConnectError::DeviceOpenFailed;
+        }
         uint64_t fileSize = testFile.tellg();
         testFile.close();
         uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
@@ -63,13 +181,22 @@ bool WfsManager::Format(const std::string& otpPath, const std::string& seepromPa
         auto result = WfsDevice::Create(device_, key_);
         if (!result) {
             device_.reset();
-            return false;
+            return ConnectError::UnknownError;
         }
         wfs_ = *result;
         wfs_->Flush();
-        return true;
+        return ConnectError::None;
+    } catch (const std::runtime_error& e) {
+        std::string msg = e.what();
+        if (msg.find("key file size") != std::string::npos) {
+            if (msg.find("OTP") != std::string::npos || msg.find("1024") != std::string::npos) {
+                return ConnectError::OtpInvalidSize;
+            }
+            return ConnectError::SeepromInvalidSize;
+        }
+        return ConnectError::UnknownError;
     } catch (...) {
-        return false;
+        return ConnectError::UnknownError;
     }
 }
 
