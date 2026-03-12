@@ -3,10 +3,17 @@
 #include <shellapi.h>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
 
 #pragma comment(lib, "comctl32.lib")
 
 static MainWindow* g_pThis = nullptr;
+
+// 辅助函数：检查文件是否存在
+static bool FileExists(const char* path) {
+    struct stat buffer;
+    return (stat(path, &buffer) == 0);
+}
 
 MainWindow::MainWindow(HINSTANCE hInstance) : hInstance_(hInstance) {
     g_pThis = this;
@@ -116,13 +123,30 @@ void MainWindow::OnConnect() {
     GetWindowTextA(hSeepromEdit_, seepromPath, MAX_PATH);
     GetWindowTextA(hDriveEdit_, devicePath, MAX_PATH);
     
+    // 检查路径是否为空
     if (strlen(otpPath) == 0 || strlen(seepromPath) == 0 || strlen(devicePath) == 0) {
-        MessageBoxA(hWnd_, "Please fill all fields", "Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "Please select all required files:\n- OTP File\n- SEEPROM File\n- Device File", 
+                   "Missing Files", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    
+    // 检查文件是否存在
+    if (!FileExists(otpPath)) {
+        MessageBoxA(hWnd_, "OTP file not found:\n{otpPath}", "File Not Found", MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (!FileExists(seepromPath)) {
+        MessageBoxA(hWnd_, "SEEPROM file not found", "File Not Found", MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (!FileExists(devicePath)) {
+        MessageBoxA(hWnd_, "Device file not found", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     
     if (!wfs_.Connect(otpPath, seepromPath, devicePath)) {
-        MessageBoxA(hWnd_, "Failed to connect to WFS device", "Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "Failed to connect to WFS device.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a valid WFS device\n- Device is corrupted", 
+                   "Connection Failed", MB_OK | MB_ICONERROR);
         return;
     }
     
@@ -144,20 +168,32 @@ void MainWindow::OnDisconnect() {
     EnableWindow(hOtpEdit_, TRUE);
     EnableWindow(hSeepromEdit_, TRUE);
     EnableWindow(hDriveEdit_, TRUE);
-    EnableWindow(hDeleteBtn_, FALSE);
+    EnableWindow(hDeleteBtn_, FALSE);  // 禁用删除按钮
     
-    // 清空树
+    // 清空树和选中状态
     TreeView_DeleteAllItems(hFileTree_);
+    selectedPath_.clear();
+    selectedName_.clear();
+    selectedParentPath_.clear();
     
-    MessageBoxA(hWnd_, "Disconnected", "Info", MB_OK);
+    MessageBoxA(hWnd_, "Disconnected successfully.", "Info", MB_OK);
 }
 
 void MainWindow::OnDelete() {
-    if (selectedPath_.empty()) return;
+    // 检查是否已连接
+    if (!wfs_.IsConnected()) {
+        MessageBoxA(hWnd_, "Not connected. Please connect first.", "Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+    
+    if (selectedPath_.empty()) {
+        MessageBoxA(hWnd_, "No item selected.", "Error", MB_OK | MB_ICONWARNING);
+        return;
+    }
     
     std::string msg = selectedIsDir_ ? 
-        ("Delete directory: " + selectedName_ + " and all contents?") :
-        ("Delete file: " + selectedName_ + "?");
+        ("Delete directory and all contents?\n\n" + selectedName_) :
+        ("Delete file?\n\n" + selectedName_);
     
     if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Delete", MB_YESNO | MB_ICONQUESTION) != IDYES) {
         return;
@@ -165,15 +201,19 @@ void MainWindow::OnDelete() {
     
     if (wfs_.DeleteEntry(selectedParentPath_, selectedName_, selectedIsDir_)) {
         wfs_.Flush();
+        selectedPath_.clear();  // 清空选中状态
+        EnableWindow(hDeleteBtn_, FALSE);
         RefreshTree();
-        MessageBoxA(hWnd_, "Deleted successfully!", "Info", MB_OK);
+        MessageBoxA(hWnd_, "Deleted successfully!", "Success", MB_OK | MB_ICONINFORMATION);
     } else {
-        MessageBoxA(hWnd_, "Failed to delete", "Error", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "Failed to delete.\n\nThe file may be in use or protected.", "Delete Failed", MB_OK | MB_ICONERROR);
     }
 }
 
 void MainWindow::RefreshTree() {
     TreeView_DeleteAllItems(hFileTree_);
+    
+    if (!wfs_.IsConnected()) return;
     
     TVINSERTSTRUCTA tvi = {0};
     tvi.hParent = TVI_ROOT;
@@ -279,7 +319,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                             selectedName_ = selectedName_.substr(1, selectedName_.length() - 2);
                         }
                         
-                        EnableWindow(hDeleteBtn_, TRUE);
+                        // 只有在已连接时才启用删除按钮
+                        if (wfs_.IsConnected()) {
+                            EnableWindow(hDeleteBtn_, TRUE);
+                        }
                     }
                 }
             }
@@ -297,7 +340,8 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             HDROP hDrop = (HDROP)wParam;
             
             if (!wfs_.IsConnected()) {
-                MessageBoxA(hWnd_, "Please connect first", "Error", MB_OK | MB_ICONERROR);
+                MessageBoxA(hWnd_, "Please connect to a device first before importing files.", 
+                           "Not Connected", MB_OK | MB_ICONWARNING);
                 DragFinish(hDrop);
                 break;
             }
@@ -305,6 +349,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             char droppedFile[MAX_PATH];
             DragQueryFileA(hDrop, 0, droppedFile, MAX_PATH);
             DragFinish(hDrop);
+            
+            // 检查文件是否存在
+            if (!FileExists(droppedFile)) {
+                MessageBoxA(hWnd_, "The dropped file does not exist.", "File Not Found", MB_OK | MB_ICONERROR);
+                break;
+            }
             
             // 导入文件到根目录
             std::string filename = droppedFile;
@@ -316,9 +366,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (wfs_.ImportFile(droppedFile, "\\", filename)) {
                 wfs_.Flush();
                 RefreshTree();
-                MessageBoxA(hWnd_, "File imported!", "Info", MB_OK);
+                MessageBoxA(hWnd_, "File imported successfully!", "Success", MB_OK | MB_ICONINFORMATION);
             } else {
-                MessageBoxA(hWnd_, "Failed to import file", "Error", MB_OK | MB_ICONERROR);
+                MessageBoxA(hWnd_, "Failed to import file.\n\nThe file may already exist or the device is full.", 
+                           "Import Failed", MB_OK | MB_ICONERROR);
             }
             break;
         }
