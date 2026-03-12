@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WFS Explorer UI Preview</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            background: #f0f0f0;
+            padding: 20px;
+        }
+        .window {
+            width: 800px;
+            height: 500px;
+            background: #f0f0f0;
+            border: 2px solid #888;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+            margin: 0 auto;
+        }
+        .titlebar {
+            background: linear-gradient(180deg, #0078d4, #005a9e);
+            color: white;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+        .content {
+            display: flex;
+            height: calc(100% - 32px);
+        }
+        .left-panel {
+            width: 280px;
+            padding: 15px;
+            border-right: 1px solid #ccc;
+            background: #f8f8f8;
+        }
+        .right-panel {
+            flex: 1;
+            padding: 15px;
+            background: white;
+        }
+        .label { 
+            font-size: 12px; 
+            color: #333; 
+            margin-bottom: 3px;
+            margin-top: 10px;
+        }
+        .label:first-child { margin-top: 0; }
+        input[type="text"] {
+            width: calc(100% - 35px);
+            padding: 5px 8px;
+            border: 1px solid #aaa;
+            font-size: 12px;
+        }
+        .browse-btn {
+            padding: 5px 10px;
+            background: #e0e0e0;
+            border: 1px solid #aaa;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .browse-btn:hover { background: #d0d0d0; }
+        .btn {
+            padding: 8px 20px;
+            border: 1px solid #0078d4;
+            background: #0078d4;
+            color: white;
+            cursor: pointer;
+            font-size: 13px;
+            margin: 5px 5px 5px 0;
+        }
+        .btn:hover { background: #005a9e; }
+        .btn:disabled {
+            background: #ccc;
+            border-color: #aaa;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            border-color: #aaa;
+        }
+        .btn-secondary:hover { background: #e0e0e0; }
+        .btn-danger {
+            background: #c42b1c;
+            border-color: #c42b1c;
+        }
+        .btn-danger:hover { background: #a02015; }
+        .file-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 3px;
+        }
+        .tree {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .folder { color: #c9a000; }
+        .file { color: #333; }
+        .selected { background: #0078d4; color: white; }
+        .selected .folder, .selected .file { color: white; }
+        .section-title {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #333;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #ccc;
+        }
+        .status-bar {
+            background: #f0f0f0;
+            border-top: 1px solid #ccc;
+            padding: 5px 10px;
+            font-size: 11px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h3 style="text-align:center; margin-bottom:20px; color:#333;">WFS Explorer 界面预览</h3>
+    
+    <div class="window">
+        <div class="titlebar">WFS Explorer</div>
+        <div class="content">
+            <div class="left-panel">
+                <div class="section-title">连接设置</div>
+                
+                <div class="label">OTP File:</div>
+                <div class="file-row">
+                    <input type="text" value="C:\wfs\otp.bin">
+                    <button class="browse-btn">...</button>
+                </div>
+                
+                <div class="label">SEEPROM File:</div>
+                <div class="file-row">
+                    <input type="text" value="C:\wfs\seeprom.bin">
+                    <button class="browse-btn">...</button>
+                </div>
+                
+                <div class="label">Device File:</div>
+                <div class="file-row">
+                    <input type="text" value="C:\wfs\wfs.img">
+                    <button class="browse-btn">...</button>
+                </div>
+                
+                <div style="margin-top:20px;">
+                    <button class="btn" disabled>Connect</button>
+                    <button class="btn btn-secondary">Disconnect</button>
+                </div>
+                
+                <div style="margin-top:20px; border-top:1px solid #ccc; padding-top:15px;">
+                    <div class="section-title">操作</div>
+                    <button class="btn btn-danger">Delete Selected</button>
+                </div>
+            </div>
+            
+            <div class="right-panel">
+                <div class="section-title">文件列表</div>
+                <div class="tree">
+                    <div>▼ <span class="folder">📁 \</span></div>
+                    <div style="margin-left:20px;">▼ <span class="folder">📁 [storage_slc]</span></div>
+                    <div style="margin-left:40px;">▼ <span class="folder">📁 [title]</span></div>
+                    <div style="margin-left:60px;">  <span class="folder">📁 [00050000-10101010]</span></div>
+                    <div style="margin-left:60px;"><span class="selected">▶ <span class="folder">📁 [00050000-20202020]</span></span></div>
+                    <div style="margin-left:40px;">  <span class="file">📄 cert</span></div>
+                    <div style="margin-left:40px;">  <span class="file">📄 tik.bin</span></div>
+                    <div style="margin-left:20px;">▼ <span class="folder">📁 [sys]</span></div>
+                    <div style="margin-left:40px;">  <span class="file">📄 hbm.data</span></div>
+                    <div style="margin-left:40px;">  <span class="file">📄 save.xml</span></div>
+                    <div style="margin-left:20px;">  <span class="folder">📁 [usr]</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="status-bar">Connected to: C:\wfs\wfs.img | Selected: [00050000-20202020]</div>
+    </div>
+    
+    <p style="text-align:center; margin-top:20px; color:#666; font-size:12px;">
+        提示：选中文件后点击 Delete Selected 删除 | 拖放文件到窗口导入
+    </p>
+</body>
+</html>

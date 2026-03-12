@@ -3,7 +3,6 @@
 
 #include <windows.h>
 #include <commctrl.h>
-#include <string>
 #include "wfs_wrapper.h"
 
 class MainWindow {
@@ -14,30 +13,32 @@ public:
     int Run();
     
 private:
-    static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
+    HINSTANCE hInstance_;
+    HWND hWnd_;
+    HWND hOtpEdit_;
+    HWND hSeepromEdit_;
+    HWND hDriveEdit_;
+    HWND hConnectBtn_;
+    HWND hDisconnectBtn_;
+    HWND hFileTree_;
+    
+    WfsManager wfs_;
+    std::string selectedPath_;
+    std::string selectedName_;
+    std::string selectedParentPath_;
+    bool selectedIsDir_ = false;
     
     void CreateControls();
+    void ShowContextMenu(int x, int y);
     void OnConnect();
     void OnDisconnect();
     void OnDelete();
+    void OnExport();
     void RefreshTree();
     void PopulateTreeItem(HTREEITEM hParent, const std::string& path);
+    LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
     
-    // 控件
-    HWND hWnd_;
-    HWND hOtpEdit_, hSeepromEdit_, hDriveEdit_;
-    HWND hConnectBtn_, hDisconnectBtn_, hDeleteBtn_;
-    HWND hFileTree_;
-    
-    HINSTANCE hInstance_;
-    WfsManager wfs_;
-    
-    // 当前选中的路径
-    std::string selectedPath_;
-    std::string selectedParentPath_;
-    std::string selectedName_;
-    bool selectedIsDir_;
+    static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 };
 
 #endif // MAINWINDOW_H

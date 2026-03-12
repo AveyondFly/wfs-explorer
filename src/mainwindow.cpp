@@ -104,10 +104,6 @@ void MainWindow::CreateControls() {
     hDisconnectBtn_ = CreateWindowExA(0, "BUTTON", "Disconnect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
         100, 220, 80, 30, hWnd_, (HMENU)1011, hInstance_, nullptr);
     
-    // 删除按钮
-    hDeleteBtn_ = CreateWindowExA(0, "BUTTON", "Delete Selected", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
-        10, 260, 120, 30, hWnd_, (HMENU)1012, hInstance_, nullptr);
-    
     // 文件树
     hFileTree_ = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "", 
         WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
@@ -115,6 +111,57 @@ void MainWindow::CreateControls() {
     
     // 启用拖放
     DragAcceptFiles(hWnd_, TRUE);
+}
+
+void MainWindow::ShowContextMenu(int x, int y) {
+    if (!wfs_.IsConnected() || selectedPath_.empty()) return;
+    
+    // 创建弹出菜单
+    HMENU hMenu = CreatePopupMenu();
+    
+    if (selectedIsDir_) {
+        AppendMenuA(hMenu, MF_STRING, 3001, "Export directory...");
+    } else {
+        AppendMenuA(hMenu, MF_STRING, 3001, "Export file...");
+    }
+    AppendMenuA(hMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(hMenu, MF_STRING, 3002, "Delete");
+    
+    // 显示菜单
+    TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, x, y, 0, hWnd_, nullptr);
+    DestroyMenu(hMenu);
+}
+
+void MainWindow::OnExport() {
+    if (!wfs_.IsConnected() || selectedPath_.empty()) return;
+    
+    // 保存文件对话框
+    OPENFILENAMEA ofn = {0};
+    char filename[MAX_PATH] = {0};
+    
+    // 默认文件名
+    strncpy(filename, selectedName_.c_str(), MAX_PATH - 1);
+    
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hWnd_;
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrDefExt = "";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    
+    if (selectedIsDir_) {
+        ofn.lpstrFilter = "All Files\0*.*\0";
+    } else {
+        ofn.lpstrFilter = "All Files\0*.*\0";
+    }
+    
+    if (GetSaveFileNameA(&ofn)) {
+        if (wfs_.ExportFile(selectedPath_, filename)) {
+            MessageBoxA(hWnd_, "Export successful!", "Success", MB_OK | MB_ICONINFORMATION);
+        } else {
+            MessageBoxA(hWnd_, "Failed to export.", "Error", MB_OK | MB_ICONERROR);
+        }
+    }
 }
 
 void MainWindow::OnConnect() {
@@ -132,15 +179,15 @@ void MainWindow::OnConnect() {
     
     // 检查文件是否存在
     if (!FileExists(otpPath)) {
-        MessageBoxA(hWnd_, "OTP file not found:\n{otpPath}", "File Not Found", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "OTP file not found.", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     if (!FileExists(seepromPath)) {
-        MessageBoxA(hWnd_, "SEEPROM file not found", "File Not Found", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     if (!FileExists(devicePath)) {
-        MessageBoxA(hWnd_, "Device file not found", "File Not Found", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "Device file not found.", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     
@@ -168,7 +215,6 @@ void MainWindow::OnDisconnect() {
     EnableWindow(hOtpEdit_, TRUE);
     EnableWindow(hSeepromEdit_, TRUE);
     EnableWindow(hDriveEdit_, TRUE);
-    EnableWindow(hDeleteBtn_, FALSE);  // 禁用删除按钮
     
     // 清空树和选中状态
     TreeView_DeleteAllItems(hFileTree_);
@@ -202,7 +248,6 @@ void MainWindow::OnDelete() {
     if (wfs_.DeleteEntry(selectedParentPath_, selectedName_, selectedIsDir_)) {
         wfs_.Flush();
         selectedPath_.clear();  // 清空选中状态
-        EnableWindow(hDeleteBtn_, FALSE);
         RefreshTree();
         MessageBoxA(hWnd_, "Deleted successfully!", "Success", MB_OK | MB_ICONINFORMATION);
     } else {
@@ -286,8 +331,12 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             else if (id == 1011) {
                 OnDisconnect();
             }
-            // 删除按钮
-            else if (id == 1012) {
+            // 右键菜单 - 导出
+            else if (id == 3001) {
+                OnExport();
+            }
+            // 右键菜单 - 删除
+            else if (id == 3002) {
                 OnDelete();
             }
             break;
@@ -296,6 +345,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_NOTIFY: {
             LPNMHDR pnmh = (LPNMHDR)lParam;
             if (pnmh->idFrom == 2000) {
+                // 选中变化
                 if (pnmh->code == TVN_SELCHANGED) {
                     LPNMTREEVIEWA pnmtv = (LPNMTREEVIEWA)lParam;
                     TVITEMA item = pnmtv->itemNew;
@@ -318,11 +368,52 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                         if (selectedIsDir_) {
                             selectedName_ = selectedName_.substr(1, selectedName_.length() - 2);
                         }
+                    }
+                }
+                // 右键点击
+                else if (pnmh->code == NM_RCLICK) {
+                    // 获取鼠标位置
+                    POINT pt;
+                    GetCursorPos(&pt);
+                    
+                    // 获取点击的项
+                    TVHITTESTINFO ht = {0};
+                    ScreenToClient(hFileTree_, &pt);
+                    ht.pt = pt;
+                    SendMessage(hFileTree_, TVM_HITTEST, 0, (LPARAM)&ht);
+                    
+                    if (ht.hItem && (ht.flags & TVHT_ONITEM)) {
+                        // 选中该项
+                        SendMessage(hFileTree_, TVM_SELECTITEM, TVGN_CARET, (LPARAM)ht.hItem);
                         
-                        // 只有在已连接时才启用删除按钮
-                        if (wfs_.IsConnected()) {
-                            EnableWindow(hDeleteBtn_, TRUE);
+                        // 更新选中信息
+                        TVITEMA item = {0};
+                        item.hItem = ht.hItem;
+                        item.mask = TVIF_PARAM;
+                        SendMessage(hFileTree_, TVM_GETITEM, 0, (LPARAM)&item);
+                        
+                        if (item.lParam) {
+                            std::string* pPath = (std::string*)item.lParam;
+                            selectedPath_ = *pPath;
+                            
+                            size_t pos = selectedPath_.find_last_of('\\');
+                            if (pos == 0) {
+                                selectedParentPath_ = "\\";
+                                selectedName_ = selectedPath_.substr(1);
+                            } else if (pos != std::string::npos) {
+                                selectedParentPath_ = selectedPath_.substr(0, pos);
+                                selectedName_ = selectedPath_.substr(pos + 1);
+                            }
+                            
+                            selectedIsDir_ = (selectedName_[0] == '[');
+                            if (selectedIsDir_) {
+                                selectedName_ = selectedName_.substr(1, selectedName_.length() - 2);
+                            }
                         }
+                        
+                        // 显示右键菜单
+                        ClientToScreen(hFileTree_, &pt);
+                        ShowContextMenu(pt.x, pt.y);
                     }
                 }
             }
