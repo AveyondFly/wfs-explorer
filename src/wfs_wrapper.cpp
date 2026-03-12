@@ -4,6 +4,8 @@
 
 bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
     try {
+        Disconnect();
+        
         // 加载 OTP 和 SEEPROM
         auto otp = OTP::LoadFromFile(otpPath);
         if (!otp) return false;
@@ -12,9 +14,9 @@ bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromP
         if (!seeprom) return false;
         
         key_ = seeprom->GetUSBKey(*otp);
+        devicePath_ = devicePath;
         
         // 创建设备 (读写模式)
-        // 计算扇区数
         std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
         uint64_t fileSize = testFile.tellg();
         testFile.close();
@@ -35,6 +37,42 @@ bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromP
     }
 }
 
+bool WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+    try {
+        Disconnect();
+        
+        // 加载 OTP 和 SEEPROM
+        auto otp = OTP::LoadFromFile(otpPath);
+        if (!otp) return false;
+        
+        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
+        if (!seeprom) return false;
+        
+        key_ = seeprom->GetUSBKey(*otp);
+        devicePath_ = devicePath;
+        
+        // 创建设备 (读写模式)
+        std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
+        uint64_t fileSize = testFile.tellg();
+        testFile.close();
+        uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
+        
+        device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
+        
+        // 创建新的 WFS (格式化)
+        auto result = WfsDevice::Create(device_, key_);
+        if (!result) {
+            device_.reset();
+            return false;
+        }
+        wfs_ = *result;
+        wfs_->Flush();
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 void WfsManager::Disconnect() {
     if (wfs_) {
         wfs_->Flush();
@@ -42,6 +80,7 @@ void WfsManager::Disconnect() {
     wfs_.reset();
     device_.reset();
     key_.clear();
+    devicePath_.clear();
 }
 
 std::vector<DirEntry> WfsManager::ListDirectory(const std::string& path) {

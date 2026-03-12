@@ -28,6 +28,9 @@ public:
     void Disconnect();
     bool IsConnected() const { return wfs_ != nullptr; }
     
+    // 格式化 (基于当前设置的密钥)
+    bool Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath);
+    
     // 文件操作
     std::vector<DirEntry> ListDirectory(const std::string& path);
     bool DeleteEntry(const std::string& parentPath, const std::string& name, bool isDirectory);
@@ -41,6 +44,7 @@ private:
     std::shared_ptr<FileDevice> device_;
     std::shared_ptr<WfsDevice> wfs_;
     std::vector<std::byte> key_;
+    std::string devicePath_;
 };
 
 #endif // WFS_WRAPPER_H

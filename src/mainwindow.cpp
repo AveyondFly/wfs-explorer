@@ -66,8 +66,9 @@ int MainWindow::Run() {
 void MainWindow::CreateControls() {
     // 左侧面板
     CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_GRAYRECT,
-        10, 10, 250, 200, hWnd_, nullptr, hInstance_, nullptr);
+        10, 10, 250, 180, hWnd_, nullptr, hInstance_, nullptr);
     
+    // OTP
     CreateWindowExA(0, "STATIC", "OTP File:", WS_CHILD | WS_VISIBLE,
         20, 20, 80, 20, hWnd_, nullptr, hInstance_, nullptr);
     hOtpEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -75,6 +76,7 @@ void MainWindow::CreateControls() {
     CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 45, 30, 25, hWnd_, (HMENU)1001, hInstance_, nullptr);
     
+    // SEEPROM
     CreateWindowExA(0, "STATIC", "SEEPROM File:", WS_CHILD | WS_VISIBLE,
         20, 80, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
     hSeepromEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -82,23 +84,41 @@ void MainWindow::CreateControls() {
     CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 105, 30, 25, hWnd_, (HMENU)1002, hInstance_, nullptr);
     
-    CreateWindowExA(0, "STATIC", "Device File:", WS_CHILD | WS_VISIBLE,
-        20, 140, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
-    hDriveEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        20, 165, 160, 25, hWnd_, nullptr, hInstance_, nullptr);
-    CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
-        185, 165, 30, 25, hWnd_, (HMENU)1003, hInstance_, nullptr);
+    // Drive 盘符选择
+    CreateWindowExA(0, "STATIC", "Wii U Partition:", WS_CHILD | WS_VISIBLE,
+        20, 140, 120, 20, hWnd_, nullptr, hInstance_, nullptr);
+    hDriveCombo_ = CreateWindowExA(0, "COMBOBOX", "", 
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
+        20, 165, 195, 200, hWnd_, (HMENU)1003, hInstance_, nullptr);
     
+    // 扫描可用盘符
+    char drives[256];
+    GetLogicalDriveStringsA(sizeof(drives), drives);
+    char* p = drives;
+    while (*p) {
+        std::string drive = p;
+        // 只显示固定磁盘
+        if (GetDriveTypeA(drive.c_str()) == DRIVE_FIXED) {
+            SendMessageA(hDriveCombo_, CB_ADDSTRING, 0, (LPARAM)drive.c_str());
+        }
+        p += drive.length() + 1;
+    }
+    // 默认选择第一个
+    SendMessageA(hDriveCombo_, CB_SETCURSEL, 0, 0);
+    
+    // 按钮
     hConnectBtn_ = CreateWindowExA(0, "BUTTON", "Connect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        10, 220, 80, 30, hWnd_, (HMENU)1010, hInstance_, nullptr);
+        10, 200, 75, 30, hWnd_, (HMENU)1010, hInstance_, nullptr);
     hDisconnectBtn_ = CreateWindowExA(0, "BUTTON", "Disconnect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
-        100, 220, 80, 30, hWnd_, (HMENU)1011, hInstance_, nullptr);
+        90, 200, 75, 30, hWnd_, (HMENU)1011, hInstance_, nullptr);
+    hFormatBtn_ = CreateWindowExA(0, "BUTTON", "Format", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        170, 200, 75, 30, hWnd_, (HMENU)1012, hInstance_, nullptr);
     
     // 当前路径标签
-    hPathLabel_ = CreateWindowExA(0, "STATIC", "Current: \\", WS_CHILD | WS_VISIBLE | SS_SUNKEN,
+    hPathLabel_ = CreateWindowExA(0, "STATIC", "Select drive and click Connect or Format", WS_CHILD | WS_VISIBLE | SS_SUNKEN,
         280, 10, 500, 25, hWnd_, nullptr, hInstance_, nullptr);
     
-    // 文件列表 (ListView)
+    // 文件列表
     hFileList_ = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "", 
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
         280, 40, 500, 510, hWnd_, (HMENU)2000, hInstance_, nullptr);
@@ -122,13 +142,19 @@ void MainWindow::CreateControls() {
     DragAcceptFiles(hWnd_, TRUE);
 }
 
+std::string MainWindow::GetSelectedDrive() {
+    char drive[16] = {0};
+    int sel = SendMessageA(hDriveCombo_, CB_GETCURSEL, 0, 0);
+    SendMessageA(hDriveCombo_, CB_GETLBTEXT, sel, (LPARAM)drive);
+    return std::string(drive);
+}
+
 void MainWindow::ShowContextMenu(int x, int y) {
     if (!wfs_.IsConnected()) return;
     
     HMENU hMenu = CreatePopupMenu();
     
-    // 如果有选中项
-    if (!selectedName_.empty()) {
+    if (!selectedName_.empty() && selectedName_ != "." && selectedName_ != "..") {
         if (selectedIsDir_) {
             AppendMenuA(hMenu, MF_STRING, 3001, "Open folder");
             AppendMenuA(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -140,7 +166,6 @@ void MainWindow::ShowContextMenu(int x, int y) {
         AppendMenuA(hMenu, MF_STRING, 3003, "Delete");
     }
     
-    // 总是显示导入选项
     AppendMenuA(hMenu, MF_STRING, 3004, "Import file here...");
     
     TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, x, y, 0, hWnd_, nullptr);
@@ -158,7 +183,6 @@ void MainWindow::OnExport() {
     ofn.hwndOwner = hWnd_;
     ofn.lpstrFile = filename;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrDefExt = "";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     
     if (GetSaveFileNameA(&ofn)) {
@@ -183,52 +207,58 @@ void MainWindow::OnImport() {
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     
     if (GetOpenFileNameA(&ofn)) {
-        // 从路径提取文件名
         std::string filepath = filename;
         std::string name = filepath;
         size_t pos = filepath.find_last_of("\\/");
-        if (pos != std::string::npos) {
-            name = filepath.substr(pos + 1);
-        }
+        if (pos != std::string::npos) name = filepath.substr(pos + 1);
         
         if (wfs_.ImportFile(filepath, currentPath_, name)) {
             wfs_.Flush();
             RefreshList();
-            MessageBoxA(hWnd_, "File imported successfully!", "Success", MB_OK | MB_ICONINFORMATION);
+            MessageBoxA(hWnd_, "File imported!", "Success", MB_OK | MB_ICONINFORMATION);
         } else {
-            MessageBoxA(hWnd_, "Failed to import file.", "Error", MB_OK | MB_ICONERROR);
+            MessageBoxA(hWnd_, "Failed to import.", "Error", MB_OK | MB_ICONERROR);
         }
     }
 }
 
 void MainWindow::OnConnect() {
-    char otpPath[MAX_PATH], seepromPath[MAX_PATH], devicePath[MAX_PATH];
+    char otpPath[MAX_PATH], seepromPath[MAX_PATH];
     GetWindowTextA(hOtpEdit_, otpPath, MAX_PATH);
     GetWindowTextA(hSeepromEdit_, seepromPath, MAX_PATH);
-    GetWindowTextA(hDriveEdit_, devicePath, MAX_PATH);
     
-    if (strlen(otpPath) == 0 || strlen(seepromPath) == 0 || strlen(devicePath) == 0) {
-        MessageBoxA(hWnd_, "Please select all required files:\n- OTP File\n- SEEPROM File\n- Device File", 
+    if (strlen(otpPath) == 0 || strlen(seepromPath) == 0) {
+        MessageBoxA(hWnd_, "Please select OTP and SEEPROM files.", 
                    "Missing Files", MB_OK | MB_ICONWARNING);
         return;
     }
     
-    if (!FileExists(otpPath) || !FileExists(seepromPath) || !FileExists(devicePath)) {
-        MessageBoxA(hWnd_, "One or more files not found.", "File Not Found", MB_OK | MB_ICONERROR);
+    if (!FileExists(otpPath) || !FileExists(seepromPath)) {
+        MessageBoxA(hWnd_, "OTP or SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     
+    std::string drive = GetSelectedDrive();
+    if (drive.empty()) {
+        MessageBoxA(hWnd_, "Please select a drive.", "No Drive", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    
+    // 构建设备路径 (\\.\X:)
+    std::string devicePath = "\\\\.\\" + drive.substr(0, 2);
+    
     if (!wfs_.Connect(otpPath, seepromPath, devicePath)) {
-        MessageBoxA(hWnd_, "Failed to connect to WFS device.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a valid WFS device", 
+        MessageBoxA(hWnd_, "Failed to connect.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a Wii U partition\n- Drive is in use", 
                    "Connection Failed", MB_OK | MB_ICONERROR);
         return;
     }
     
     EnableWindow(hConnectBtn_, FALSE);
     EnableWindow(hDisconnectBtn_, TRUE);
+    EnableWindow(hFormatBtn_, FALSE);
     EnableWindow(hOtpEdit_, FALSE);
     EnableWindow(hSeepromEdit_, FALSE);
-    EnableWindow(hDriveEdit_, FALSE);
+    EnableWindow(hDriveCombo_, FALSE);
     
     currentPath_ = "\\";
     RefreshList();
@@ -240,50 +270,113 @@ void MainWindow::OnDisconnect() {
     
     EnableWindow(hConnectBtn_, TRUE);
     EnableWindow(hDisconnectBtn_, FALSE);
+    EnableWindow(hFormatBtn_, TRUE);
     EnableWindow(hOtpEdit_, TRUE);
     EnableWindow(hSeepromEdit_, TRUE);
-    EnableWindow(hDriveEdit_, TRUE);
+    EnableWindow(hDriveCombo_, TRUE);
     
     ListView_DeleteAllItems(hFileList_);
-    SetWindowTextA(hPathLabel_, "Current: \\");
+    SetWindowTextA(hPathLabel_, "Select drive and click Connect or Format");
     currentPath_ = "\\";
     selectedName_.clear();
     selectedPath_.clear();
     
-    MessageBoxA(hWnd_, "Disconnected successfully.", "Info", MB_OK);
+    MessageBoxA(hWnd_, "Disconnected.", "Info", MB_OK);
+}
+
+void MainWindow::OnFormat() {
+    char otpPath[MAX_PATH], seepromPath[MAX_PATH];
+    GetWindowTextA(hOtpEdit_, otpPath, MAX_PATH);
+    GetWindowTextA(hSeepromEdit_, seepromPath, MAX_PATH);
+    
+    if (strlen(otpPath) == 0 || strlen(seepromPath) == 0) {
+        MessageBoxA(hWnd_, "Please select OTP and SEEPROM files.", 
+                   "Missing Files", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    
+    if (!FileExists(otpPath) || !FileExists(seepromPath)) {
+        MessageBoxA(hWnd_, "OTP or SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
+        return;
+    }
+    
+    std::string drive = GetSelectedDrive();
+    if (drive.empty()) {
+        MessageBoxA(hWnd_, "Please select a drive.", "No Drive", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    
+    // 格式化警告对话框
+    int result = MessageBoxA(hWnd_, 
+        "!!! WARNING - HIGH RISK OPERATION !!!\n\n"
+        "Formatting will ERASE ALL DATA on the selected partition!\n\n"
+        "This action cannot be undone!\n\n"
+        "Make sure you have selected the correct Wii U partition.\n\n"
+        "Do you want to continue?",
+        "!!! FORMAT WARNING !!!",
+        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+    
+    if (result != IDYES) return;
+    
+    // 二次确认
+    result = MessageBoxA(hWnd_,
+        "FINAL WARNING!\n\n"
+        "ALL DATA WILL BE LOST!\n\n"
+        "Are you absolutely sure you want to format this partition?",
+        "!!! FINAL WARNING !!!",
+        MB_YESNO | MB_ICONSTOP | MB_DEFBUTTON2);
+    
+    if (result != IDYES) return;
+    
+    // 构建设备路径 (\\.\X:)
+    std::string devicePath = "\\\\.\\" + drive.substr(0, 2);
+    
+    // 执行格式化
+    if (!wfs_.Format(otpPath, seepromPath, devicePath)) {
+        MessageBoxA(hWnd_, "Failed to format.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Drive is in use or write-protected\n- Insufficient permissions (Run as Administrator)", 
+                   "Format Failed", MB_OK | MB_ICONERROR);
+        return;
+    }
+    
+    // 格式化成功，自动连接
+    EnableWindow(hConnectBtn_, FALSE);
+    EnableWindow(hDisconnectBtn_, TRUE);
+    EnableWindow(hFormatBtn_, FALSE);
+    EnableWindow(hOtpEdit_, FALSE);
+    EnableWindow(hSeepromEdit_, FALSE);
+    EnableWindow(hDriveCombo_, FALSE);
+    
+    currentPath_ = "\\";
+    RefreshList();
+    MessageBoxA(hWnd_, "Format completed successfully!\n\nPartition is now connected.", "Success", MB_OK | MB_ICONINFORMATION);
 }
 
 void MainWindow::OnDelete() {
     if (!wfs_.IsConnected() || selectedName_.empty()) return;
+    if (selectedName_ == "." || selectedName_ == "..") return;
     
     std::string msg = selectedIsDir_ ? 
         ("Delete folder and all contents?\n\n" + selectedName_) :
         ("Delete file?\n\n" + selectedName_);
     
-    if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Delete", MB_YESNO | MB_ICONQUESTION) != IDYES) {
-        return;
-    }
+    if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Delete", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
     
     if (wfs_.DeleteEntry(currentPath_, selectedName_, selectedIsDir_)) {
         wfs_.Flush();
         selectedName_.clear();
         selectedPath_.clear();
         RefreshList();
-        MessageBoxA(hWnd_, "Deleted successfully!", "Success", MB_OK | MB_ICONINFORMATION);
+        MessageBoxA(hWnd_, "Deleted!", "Success", MB_OK | MB_ICONINFORMATION);
     } else {
         MessageBoxA(hWnd_, "Failed to delete.", "Error", MB_OK | MB_ICONERROR);
     }
 }
 
 void MainWindow::NavigateTo(const std::string& name, bool isDir) {
-    if (name == ".") {
-        // 当前目录，什么都不做
-        return;
-    }
+    if (name == ".") return;
     
     if (name == "..") {
-        // 返回上层
-        if (currentPath_ == "\\") return;  // 已经是根目录
+        if (currentPath_ == "\\") return;
         
         size_t pos = currentPath_.find_last_of('\\');
         if (pos == 0) {
@@ -295,7 +388,6 @@ void MainWindow::NavigateTo(const std::string& name, bool isDir) {
         return;
     }
     
-    // 进入子目录
     if (!isDir) return;
     
     if (currentPath_ == "\\") {
@@ -311,47 +403,32 @@ void MainWindow::RefreshList() {
     
     if (!wfs_.IsConnected()) return;
     
-    // 更新路径标签
     std::string labelText = "Current: " + currentPath_;
     SetWindowTextA(hPathLabel_, labelText.c_str());
     
     LVITEMA lvi = {0};
     lvi.mask = LVIF_TEXT | LVIF_PARAM;
-    
     int row = 0;
     
-    // 添加 . 和 .. (除非是根目录)
+    // 添加 .. (除非是根目录)
     if (currentPath_ != "\\") {
-        // .
-        lvi.iItem = row;
-        lvi.iSubItem = 0;
-        lvi.pszText = (LPSTR)".";
-        lvi.lParam = 0;
-        ListView_InsertItem(hFileList_, &lvi);
-        ListView_SetItemText(hFileList_, row, 1, (LPSTR)"<DIR>");
-        ListView_SetItemText(hFileList_, row, 2, (LPSTR)"");
-        row++;
-        
-        // ..
         lvi.iItem = row;
         lvi.pszText = (LPSTR)"..";
+        lvi.lParam = 0;
         ListView_InsertItem(hFileList_, &lvi);
         ListView_SetItemText(hFileList_, row, 1, (LPSTR)"<UP>");
         ListView_SetItemText(hFileList_, row, 2, (LPSTR)"");
         row++;
     }
     
-    // 获取目录内容
     auto entries = wfs_.ListDirectory(currentPath_);
     
-    // 先排序：文件夹在前，然后文件
     std::vector<DirEntry> dirs, files;
     for (const auto& e : entries) {
         if (e.is_directory) dirs.push_back(e);
         else files.push_back(e);
     }
     
-    // 添加文件夹
     for (const auto& entry : dirs) {
         lvi.iItem = row;
         lvi.pszText = (LPSTR)entry.name.c_str();
@@ -362,7 +439,6 @@ void MainWindow::RefreshList() {
         row++;
     }
     
-    // 添加文件
     char sizeStr[32];
     for (const auto& entry : files) {
         lvi.iItem = row;
@@ -393,18 +469,15 @@ void MainWindow::UpdateSelection() {
     if (lvi.lParam) {
         selectedName_ = *(std::string*)lvi.lParam;
     } else {
-        // 可能是 . 或 ..
         char name[256] = {0};
         ListView_GetItemText(hFileList_, idx, 0, name, sizeof(name));
         selectedName_ = name;
     }
     
-    // 判断类型
     char type[32] = {0};
     ListView_GetItemText(hFileList_, idx, 1, type, sizeof(type));
-    selectedIsDir_ = (strcmp(type, "<DIR>") == 0 || strcmp(type, "<UP>") == 0 || selectedName_ == "." || selectedName_ == "..");
+    selectedIsDir_ = (strcmp(type, "<DIR>") == 0 || strcmp(type, "<UP>") == 0);
     
-    // 计算完整路径
     if (currentPath_ == "\\") {
         selectedPath_ = "\\" + selectedName_;
     } else {
@@ -417,7 +490,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_COMMAND: {
             int id = LOWORD(wParam);
             
-            if (id >= 1001 && id <= 1003) {
+            if (id == 1001 || id == 1002) {
                 OPENFILENAMEA ofn = {0};
                 char filename[MAX_PATH] = {0};
                 ofn.lStructSize = sizeof(ofn);
@@ -428,13 +501,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 
                 if (GetOpenFileNameA(&ofn)) {
                     if (id == 1001) SetWindowTextA(hOtpEdit_, filename);
-                    else if (id == 1002) SetWindowTextA(hSeepromEdit_, filename);
-                    else if (id == 1003) SetWindowTextA(hDriveEdit_, filename);
+                    else SetWindowTextA(hSeepromEdit_, filename);
                 }
             }
             else if (id == 1010) OnConnect();
             else if (id == 1011) OnDisconnect();
-            else if (id == 3001) { NavigateTo(selectedName_, true); }  // Open folder
+            else if (id == 1012) OnFormat();
+            else if (id == 3001) { UpdateSelection(); NavigateTo(selectedName_, true); }
             else if (id == 3002) OnExport();
             else if (id == 3003) OnDelete();
             else if (id == 3004) OnImport();
@@ -444,16 +517,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_NOTIFY: {
             LPNMHDR pnmh = (LPNMHDR)lParam;
             if (pnmh->idFrom == 2000) {
-                // 双击
                 if (pnmh->code == NM_DBLCLK) {
                     UpdateSelection();
-                    if (selectedName_ == "." || selectedName_ == "..") {
-                        NavigateTo(selectedName_, true);
-                    } else if (selectedIsDir_) {
-                        NavigateTo(selectedName_, true);
-                    }
+                    if (selectedIsDir_) NavigateTo(selectedName_, true);
                 }
-                // 右键菜单
                 else if (pnmh->code == NM_RCLICK) {
                     UpdateSelection();
                     POINT pt;
@@ -467,19 +534,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_KEYDOWN: {
             if (wParam == VK_DELETE && wfs_.IsConnected()) {
                 UpdateSelection();
-                if (!selectedName_.empty() && selectedName_ != "." && selectedName_ != "..") {
-                    OnDelete();
-                }
+                if (!selectedName_.empty() && selectedName_ != "." && selectedName_ != "..") OnDelete();
             }
             else if (wParam == VK_RETURN) {
                 UpdateSelection();
-                if (selectedIsDir_) {
-                    NavigateTo(selectedName_, true);
-                }
+                if (selectedIsDir_) NavigateTo(selectedName_, true);
             }
-            else if (wParam == VK_BACK) {
-                NavigateTo("..", true);
-            }
+            else if (wParam == VK_BACK) NavigateTo("..", true);
             break;
         }
         
@@ -504,16 +565,14 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             std::string filepath = droppedFile;
             std::string name = filepath;
             size_t pos = filepath.find_last_of("\\/");
-            if (pos != std::string::npos) {
-                name = filepath.substr(pos + 1);
-            }
+            if (pos != std::string::npos) name = filepath.substr(pos + 1);
             
-            std::string msg = "Import file to current directory?\n\n" + currentPath_ + "\\\n" + name;
-            if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Import", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            std::string msgText = "Import to:\n" + currentPath_ + "\\\n" + name + " ?";
+            if (MessageBoxA(hWnd_, msgText.c_str(), "Import", MB_YESNO | MB_ICONQUESTION) == IDYES) {
                 if (wfs_.ImportFile(filepath, currentPath_, name)) {
                     wfs_.Flush();
                     RefreshList();
-                    MessageBoxA(hWnd_, "File imported!", "Success", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxA(hWnd_, "Imported!", "Success", MB_OK | MB_ICONINFORMATION);
                 } else {
                     MessageBoxA(hWnd_, "Failed to import.", "Error", MB_OK | MB_ICONERROR);
                 }
@@ -535,8 +594,6 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
 LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     MainWindow* pThis = (MainWindow*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    if (pThis) {
-        return pThis->HandleMessage(msg, wParam, lParam);
-    }
+    if (pThis) return pThis->HandleMessage(msg, wParam, lParam);
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }

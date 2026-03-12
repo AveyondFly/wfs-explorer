@@ -17,9 +17,10 @@ private:
     HWND hWnd_;
     HWND hOtpEdit_;
     HWND hSeepromEdit_;
-    HWND hDriveEdit_;
+    HWND hDriveCombo_;
     HWND hConnectBtn_;
     HWND hDisconnectBtn_;
+    HWND hFormatBtn_;
     HWND hPathLabel_;
     HWND hFileList_;
     
@@ -30,9 +31,11 @@ private:
     bool selectedIsDir_ = false;
     
     void CreateControls();
+    std::string GetSelectedDrive();
     void ShowContextMenu(int x, int y);
     void OnConnect();
     void OnDisconnect();
+    void OnFormat();
     void OnDelete();
     void OnExport();
     void OnImport();
