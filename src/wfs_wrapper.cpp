@@ -5,10 +5,10 @@
 bool WfsManager::Connect(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
     try {
         // 加载 OTP 和 SEEPROM
-        OTP* otp = OTP::LoadFromFile(otpPath);
+        auto otp = OTP::LoadFromFile(otpPath);
         if (!otp) return false;
         
-        SEEPROM* seeprom = SEEPROM::LoadFromFile(seepromPath);
+        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
         if (!seeprom) return false;
         
         key_ = seeprom->GetUSBKey(*otp);
@@ -49,10 +49,9 @@ std::vector<DirEntry> WfsManager::ListDirectory(const std::string& path) {
     if (!wfs_) return entries;
     
     try {
-        auto dirResult = wfs_->GetDirectory(path);
-        if (!dirResult) return entries;
+        auto dir = wfs_->GetDirectory(path);
+        if (!dir) return entries;
         
-        auto dir = *dirResult;
         for (const auto& item : *dir) {
             if (item.entry.has_value()) {
                 DirEntry entry;
@@ -61,7 +60,9 @@ std::vector<DirEntry> WfsManager::ListDirectory(const std::string& path) {
                 entry.is_directory = e->is_directory();
                 if (!entry.is_directory && e->is_file()) {
                     auto file = std::dynamic_pointer_cast<File>(e);
-                    entry.size = file->Size();
+                    if (file) {
+                        entry.size = file->Size();
+                    }
                 } else {
                     entry.size = 0;
                 }
@@ -77,10 +78,9 @@ bool WfsManager::DeleteEntry(const std::string& parentPath, const std::string& n
     if (!wfs_) return false;
     
     try {
-        auto dirResult = wfs_->GetDirectory(parentPath);
-        if (!dirResult) return false;
+        auto dir = wfs_->GetDirectory(parentPath);
+        if (!dir) return false;
         
-        auto dir = *dirResult;
         if (isDirectory) {
             auto result = dir->DeleteDirectory(name, true);
             return result.has_value();
@@ -97,8 +97,8 @@ bool WfsManager::ImportFile(const std::string& sourcePath, const std::string& ta
     if (!wfs_) return false;
     
     try {
-        auto dirResult = wfs_->GetDirectory(targetDir);
-        if (!dirResult) return false;
+        auto dir = wfs_->GetDirectory(targetDir);
+        if (!dir) return false;
         
         // 读取源文件
         std::ifstream file(sourcePath, std::ios::binary | std::ios::ate);
@@ -108,7 +108,6 @@ bool WfsManager::ImportFile(const std::string& sourcePath, const std::string& ta
         std::vector<std::byte> data(fileSize);
         file.read(reinterpret_cast<char*>(data.data()), fileSize);
         
-        auto dir = *dirResult;
         auto result = dir->CreateFile(name, data);
         return result.has_value();
     } catch (...) {
@@ -120,10 +119,9 @@ bool WfsManager::ExportFile(const std::string& sourcePath, const std::string& ta
     if (!wfs_) return false;
     
     try {
-        auto fileResult = wfs_->GetFile(sourcePath);
-        if (!fileResult) return false;
+        auto wfsFile = wfs_->GetFile(sourcePath);
+        if (!wfsFile) return false;
         
-        auto wfsFile = *fileResult;
         File::stream stream(wfsFile);
         
         std::ofstream outFile(targetPath, std::ios::binary);
@@ -144,10 +142,9 @@ bool WfsManager::CreateDirectory(const std::string& parentPath, const std::strin
     if (!wfs_) return false;
     
     try {
-        auto dirResult = wfs_->GetDirectory(parentPath);
-        if (!dirResult) return false;
+        auto dir = wfs_->GetDirectory(parentPath);
+        if (!dir) return false;
         
-        auto dir = *dirResult;
         auto result = dir->CreateDirectory(name);
         return result.has_value();
     } catch (...) {

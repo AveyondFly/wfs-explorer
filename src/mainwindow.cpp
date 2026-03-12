@@ -18,15 +18,15 @@ MainWindow::~MainWindow() {
 
 int MainWindow::Run() {
     // 注册窗口类
-    WNDCLASSEX wc = {0};
-    wc.cbSize = sizeof(WNDCLASSEX);
+    WNDCLASSEXA wc = {0};
+    wc.cbSize = sizeof(WNDCLASSEXA);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance_;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
-    wc.lpszClassName = L"WFSExplorerWindow";
-    RegisterClassEx(&wc);
+    wc.lpszClassName = "WFSExplorerWindow";
+    RegisterClassExA(&wc);
     
     // 初始化通用控件
     INITCOMMONCONTROLSEX icex;
@@ -35,10 +35,10 @@ int MainWindow::Run() {
     InitCommonControlsEx(&icex);
     
     // 创建主窗口
-    hWnd_ = CreateWindowEx(
+    hWnd_ = CreateWindowExA(
         WS_EX_ACCEPTFILES,
-        L"WFSExplorerWindow",
-        L"WFS Explorer",
+        "WFSExplorerWindow",
+        "WFS Explorer",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         800, 600,
@@ -64,45 +64,45 @@ int MainWindow::Run() {
 
 void MainWindow::CreateControls() {
     // 左侧面板背景
-    CreateWindowEx(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_GRAYRECT,
+    CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_GRAYRECT,
         10, 10, 250, 200, hWnd_, nullptr, hInstance_, nullptr);
     
     // OTP 选择
-    CreateWindowEx(0, L"STATIC", L"OTP File:", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "STATIC", "OTP File:", WS_CHILD | WS_VISIBLE,
         20, 20, 80, 20, hWnd_, nullptr, hInstance_, nullptr);
-    hOtpEdit_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    hOtpEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         20, 45, 160, 25, hWnd_, nullptr, hInstance_, nullptr);
-    CreateWindowEx(0, L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 45, 30, 25, hWnd_, (HMENU)1001, hInstance_, nullptr);
     
     // SEEPROM 选择
-    CreateWindowEx(0, L"STATIC", L"SEEPROM File:", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "STATIC", "SEEPROM File:", WS_CHILD | WS_VISIBLE,
         20, 80, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
-    hSeepromEdit_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    hSeepromEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         20, 105, 160, 25, hWnd_, nullptr, hInstance_, nullptr);
-    CreateWindowEx(0, L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 105, 30, 25, hWnd_, (HMENU)1002, hInstance_, nullptr);
     
     // Device 选择
-    CreateWindowEx(0, L"STATIC", L"Device File:", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "STATIC", "Device File:", WS_CHILD | WS_VISIBLE,
         20, 140, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
-    hDriveEdit_ = CreateWindowEx(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    hDriveEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
         20, 165, 160, 25, hWnd_, nullptr, hInstance_, nullptr);
-    CreateWindowEx(0, L"BUTTON", L"...", WS_CHILD | WS_VISIBLE,
+    CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 165, 30, 25, hWnd_, (HMENU)1003, hInstance_, nullptr);
     
     // 按钮
-    hConnectBtn_ = CreateWindowEx(0, L"BUTTON", L"Connect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    hConnectBtn_ = CreateWindowExA(0, "BUTTON", "Connect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         10, 220, 80, 30, hWnd_, (HMENU)1010, hInstance_, nullptr);
-    hDisconnectBtn_ = CreateWindowEx(0, L"BUTTON", L"Disconnect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
+    hDisconnectBtn_ = CreateWindowExA(0, "BUTTON", "Disconnect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
         100, 220, 80, 30, hWnd_, (HMENU)1011, hInstance_, nullptr);
     
     // 删除按钮
-    hDeleteBtn_ = CreateWindowEx(0, L"BUTTON", L"Delete Selected", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
+    hDeleteBtn_ = CreateWindowExA(0, "BUTTON", "Delete Selected", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
         10, 260, 120, 30, hWnd_, (HMENU)1012, hInstance_, nullptr);
     
     // 文件树
-    hFileTree_ = CreateWindowEx(WS_EX_CLIENTEDGE, WC_TREEVIEW, L"", 
+    hFileTree_ = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "", 
         WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
         280, 10, 500, 540, hWnd_, (HMENU)2000, hInstance_, nullptr);
     
@@ -257,7 +257,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             LPNMHDR pnmh = (LPNMHDR)lParam;
             if (pnmh->idFrom == 2000) {
                 if (pnmh->code == TVN_SELCHANGED) {
-                    LPNMTREEVIEW pnmtv = (LPNMTREEVIEW)lParam;
+                    LPNMTREEVIEWA pnmtv = (LPNMTREEVIEWA)lParam;
                     TVITEMA item = pnmtv->itemNew;
                     
                     if (item.lParam) {
