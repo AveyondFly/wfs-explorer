@@ -116,10 +116,12 @@ void WfsApp::RenderConnectPanel() {
     }
     
     ImGui::Separator();
-    
+
     // 驱动器选择
     ImGui::Text("Wii U Partition:");
-    if (ImGui::BeginCombo("##drive", selectedDrive_ < (int)drives_.size() ? drives_[selectedDrive_].c_str() : "")) {
+    const char* drivePreview = (selectedDrive_ >= 0 && selectedDrive_ < (int)drives_.size())
+        ? drives_[selectedDrive_].c_str() : "Select drive...";
+    if (ImGui::BeginCombo("##drive", drivePreview)) {
         for (int i = 0; i < (int)drives_.size(); i++) {
             bool selected = (i == selectedDrive_);
             if (ImGui::Selectable(drives_[i].c_str(), selected)) {

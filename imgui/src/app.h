@@ -24,7 +24,7 @@ private:
     
     char otpPath_[512] = "";
     char seepromPath_[512] = "";
-    int selectedDrive_ = 0;
+    int selectedDrive_ = -1;
     std::vector<std::string> drives_;
     
     std::string currentPath_;
