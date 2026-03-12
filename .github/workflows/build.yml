@@ -1,0 +1,98 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout wfs-explorer
+        uses: actions/checkout@v4
+        with:
+          submodules: "true"
+
+      - name: Install MinGW-w64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 g++-mingw-w64-x86-64 cmake
+
+      - name: Clone vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          git checkout 62159a45e18f3a9ac0548628dcaf74fcb60c6ff9
+          ./bootstrap-vcpkg.sh
+
+      - name: Create custom triplet
+        run: |
+          mkdir -p vcpkg/triplets
+          printf 'set(VCPKG_TARGET_ARCHITECTURE x64)\nset(VCPKG_CRT_LINKAGE static)\nset(VCPKG_LIBRARY_LINKAGE static)\nset(VCPKG_ENV_PASSTHROUGH PATH)\nset(VCPKG_CMAKE_SYSTEM_NAME MinGW)\nset(VCPKG_CXX_FLAGS "-std=c++23 -fvisibility=default")\nset(VCPKG_C_FLAGS "-fvisibility=default")\nset(CRYPTOPP_DISABLE_ASM "ON")\n' > vcpkg/triplets/x64-mingw-static-no-hidden.cmake
+
+      - name: Install vcpkg dependencies
+        run: |
+          ./vcpkg/vcpkg install --triplet x64-mingw-static-no-hidden
+
+      - name: Checkout wfslib
+        uses: actions/checkout@v4
+        with:
+          repository: AveyondFly/wfslib
+          path: wfslib
+          submodules: "true"
+
+      - name: Build wfslib for MinGW
+        run: |
+          cd wfslib
+          mkdir -p build-mingw
+          cd build-mingw
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVCPKG_TARGET_TRIPLET=x64-mingw-static-no-hidden \
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DBUILD_TESTING=OFF
+          cmake --build . --config Release -j$(nproc)
+
+      - name: Build wfs-explorer
+        run: |
+          WFSLIB_PATH="${{ github.workspace }}/wfslib"
+          VCPKG_PATH="${{ github.workspace }}/vcpkg_installed/x64-mingw-static-no-hidden"
+          BUILD_DIR="build-imgui"
+          
+          mkdir -p $BUILD_DIR
+          
+          CXX="x86_64-w64-mingw32-g++"
+          CFLAGS="-O2 -std=c++23 -static -mwindows"
+          INCLUDES="-I./imgui -I./imgui/backend -I${WFSLIB_PATH}/include -I${WFSLIB_PATH}/include/wfslib -I${WFSLIB_PATH}/src -I${VCPKG_PATH}/include"
+          LIBS="-L${WFSLIB_PATH}/build-mingw -L${VCPKG_PATH}/lib -lwfslib -lcryptopp -lboost_iostreams-gcc13-mt-x64-1_90 -lboost_filesystem-gcc13-mt-x64-1_90 -lboost_atomic-gcc13-mt-x64-1_90 -lzlib -lbz2 -llzma -lzstd -lmingw32 -lgdi32 -ld3d11 -ld3dcompiler -ldxgi -lole32 -loleaut32 -luuid -lcomdlg32 -lshell32 -ldwmapi"
+          
+          IMGUI_SRCS="imgui/imgui.cpp imgui/imgui_demo.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp imgui/backend/imgui_impl_win32.cpp imgui/backend/imgui_impl_dx11.cpp"
+          APP_SRCS="imgui/src/main.cpp imgui/src/app.cpp imgui/src/wfs_wrapper.cpp imgui/src/i18n.cpp"
+          
+          OBJS=""
+          for SRC in $IMGUI_SRCS $APP_SRCS; do
+            OBJ="${BUILD_DIR}/$(basename ${SRC%.cpp}).o"
+            echo "Compiling: $SRC"
+            $CXX $CFLAGS $INCLUDES -c $SRC -o $OBJ || exit 1
+            OBJS="$OBJS $OBJ"
+          done
+          
+          echo "Linking..."
+          $CXX $CFLAGS $OBJS -o $BUILD_DIR/wfs-explorer.exe $LIBS || exit 1
+          
+          echo "Build complete!"
+          ls -la $BUILD_DIR/wfs-explorer.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wfs-explorer-windows
+          path: build-imgui/wfs-explorer.exe
+          retention-days: 30
