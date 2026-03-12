@@ -22,6 +22,18 @@ MainWindow::~MainWindow() {
     g_pThis = nullptr;
 }
 
+bool MainWindow::BeginOperation() {
+    if (!wfs_.IsConnected()) return false;
+    operationCount_++;
+    return true;
+}
+
+void MainWindow::EndOperation() {
+    if (operationCount_ > 0) {
+        operationCount_--;
+    }
+}
+
 int MainWindow::Run() {
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
@@ -186,7 +198,13 @@ void MainWindow::OnExport() {
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     
     if (GetSaveFileNameA(&ofn)) {
-        if (wfs_.ExportFile(selectedPath_, filename)) {
+        if (!BeginOperation()) return;
+        
+        bool success = wfs_.ExportFile(selectedPath_, filename);
+        
+        EndOperation();
+        
+        if (success) {
             MessageBoxA(hWnd_, "Export successful!", "Success", MB_OK | MB_ICONINFORMATION);
         } else {
             MessageBoxA(hWnd_, "Failed to export.", "Error", MB_OK | MB_ICONERROR);
@@ -212,7 +230,16 @@ void MainWindow::OnImport() {
         size_t pos = filepath.find_last_of("\\/");
         if (pos != std::string::npos) name = filepath.substr(pos + 1);
         
-        if (wfs_.ImportFile(filepath, currentPath_, name)) {
+        std::string msgText = "Import to:\n" + currentPath_ + "\\\n" + name + " ?";
+        if (MessageBoxA(hWnd_, msgText.c_str(), "Import", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+        
+        if (!BeginOperation()) return;
+        
+        bool success = wfs_.ImportFile(filepath, currentPath_, name);
+        
+        EndOperation();
+        
+        if (success) {
             wfs_.Flush();
             RefreshList();
             MessageBoxA(hWnd_, "File imported!", "Success", MB_OK | MB_ICONINFORMATION);
@@ -293,6 +320,16 @@ void MainWindow::OnConnect() {
 }
 
 void MainWindow::OnDisconnect() {
+    // 检查是否有正在进行的操作
+    if (IsOperationInProgress()) {
+        MessageBoxA(hWnd_, 
+            "Cannot disconnect while operations are in progress.\n\n"
+            "Please wait for the current operation to complete.",
+            "Operation In Progress", 
+            MB_OK | MB_ICONWARNING);
+        return;
+    }
+    
     wfs_.Disconnect();
     
     EnableWindow(hConnectBtn_, TRUE);
@@ -307,6 +344,7 @@ void MainWindow::OnDisconnect() {
     currentPath_ = "\\";
     selectedName_.clear();
     selectedPath_.clear();
+    operationCount_ = 0;  // 重置计数器
     
     MessageBoxA(hWnd_, "Disconnected.", "Info", MB_OK);
 }
@@ -395,7 +433,13 @@ void MainWindow::OnDelete() {
     
     if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Delete", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
     
-    if (wfs_.DeleteEntry(currentPath_, selectedName_, selectedIsDir_)) {
+    if (!BeginOperation()) return;
+    
+    bool success = wfs_.DeleteEntry(currentPath_, selectedName_, selectedIsDir_);
+    
+    EndOperation();
+    
+    if (success) {
         wfs_.Flush();
         selectedName_.clear();
         selectedPath_.clear();
@@ -603,7 +647,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             
             std::string msgText = "Import to:\n" + currentPath_ + "\\\n" + name + " ?";
             if (MessageBoxA(hWnd_, msgText.c_str(), "Import", MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                if (wfs_.ImportFile(filepath, currentPath_, name)) {
+                if (!BeginOperation()) return 0;
+                
+                bool success = wfs_.ImportFile(filepath, currentPath_, name);
+                
+                EndOperation();
+                
+                if (success) {
                     wfs_.Flush();
                     RefreshList();
                     MessageBoxA(hWnd_, "Imported!", "Success", MB_OK | MB_ICONINFORMATION);

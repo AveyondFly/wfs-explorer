@@ -30,6 +30,14 @@ private:
     std::string selectedPath_;
     bool selectedIsDir_ = false;
     
+    // 操作计数器 - 跟踪正在进行的操作
+    int operationCount_ = 0;
+    
+    // 开始/结束操作
+    bool BeginOperation();
+    void EndOperation();
+    bool IsOperationInProgress() const { return operationCount_ > 0; }
+    
     void CreateControls();
     std::string GetSelectedDrive();
     void ShowContextMenu(int x, int y);
