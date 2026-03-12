@@ -15,7 +15,7 @@ LIBS="-L${WFSLIB_PATH}/build-mingw -L${VCPKG_PATH}/lib -lwfslib -lcryptopp -lboo
 
 IMGUI_SRCS="imgui/imgui.cpp imgui/imgui_demo.cpp imgui/imgui_draw.cpp imgui/imgui_tables.cpp imgui/imgui_widgets.cpp imgui/backend/imgui_impl_win32.cpp imgui/backend/imgui_impl_dx11.cpp"
 
-APP_SRCS="imgui/src/main.cpp imgui/src/app.cpp imgui/src/wfs_wrapper.cpp"
+APP_SRCS="imgui/src/main.cpp imgui/src/app.cpp imgui/src/wfs_wrapper.cpp imgui/src/i18n.cpp"
 
 OBJS=""
 for SRC in $IMGUI_SRCS $APP_SRCS; do

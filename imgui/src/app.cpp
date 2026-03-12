@@ -1,4 +1,5 @@
 #include "app.h"
+#include "i18n.h"
 #include <imgui.h>
 #include <windows.h>
 #include <commdlg.h>
@@ -50,41 +51,36 @@ std::string WfsApp::GetSelectedDrivePath() {
 }
 
 void WfsApp::Render() {
-    // 主窗口
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("WFS Explorer", nullptr, 
+    ImGui::Begin(Strings::Title(), nullptr, 
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
     
-    // 分割布局
     float panelWidth = 280.0f;
     
-    // 左侧面板 - 连接配置
     ImGui::BeginChild("LeftPanel", ImVec2(panelWidth, -1), true);
     RenderConnectPanel();
     ImGui::EndChild();
     
     ImGui::SameLine();
     
-    // 右侧面板 - 文件列表
     ImGui::BeginChild("RightPanel", ImVec2(-1, -1), true);
     RenderFileList();
     ImGui::EndChild();
     
     ImGui::End();
     
-    // 状态栏
     RenderStatusBar();
 }
 
 void WfsApp::RenderConnectPanel() {
-    ImGui::Text("WFS Explorer");
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Wii U Partition Manager");
+    ImGui::Text("%s", Strings::Title());
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", Strings::Subtitle());
     ImGui::Separator();
     
     // OTP 文件
-    ImGui::Text("OTP File:");
+    ImGui::Text("%s", Strings::OtpFile());
     ImGui::InputText("##otp", otpPath_, sizeof(otpPath_));
     ImGui::SameLine();
     if (ImGui::Button("...##otpbrowse")) {
@@ -100,7 +96,7 @@ void WfsApp::RenderConnectPanel() {
     }
     
     // SEEPROM 文件
-    ImGui::Text("SEEPROM File:");
+    ImGui::Text("%s", Strings::SeepromFile());
     ImGui::InputText("##seeprom", seepromPath_, sizeof(seepromPath_));
     ImGui::SameLine();
     if (ImGui::Button("...##seeprombrowse")) {
@@ -118,9 +114,9 @@ void WfsApp::RenderConnectPanel() {
     ImGui::Separator();
 
     // 驱动器选择
-    ImGui::Text("Wii U Partition:");
+    ImGui::Text("%s", Strings::WiiUPartition());
     const char* drivePreview = (selectedDrive_ >= 0 && selectedDrive_ < (int)drives_.size())
-        ? drives_[selectedDrive_].c_str() : "Select drive...";
+        ? drives_[selectedDrive_].c_str() : Strings::SelectDrive();
     if (ImGui::BeginCombo("##drive", drivePreview)) {
         for (int i = 0; i < (int)drives_.size(); i++) {
             bool selected = (i == selectedDrive_);
@@ -136,14 +132,14 @@ void WfsApp::RenderConnectPanel() {
     
     // 按钮
     if (connected_) {
-        if (ImGui::Button("Disconnect", ImVec2(-1, 30))) {
+        if (ImGui::Button(Strings::Disconnect(), ImVec2(-1, 30))) {
             Disconnect();
         }
     } else {
-        if (ImGui::Button("Connect", ImVec2(-1, 30))) {
+        if (ImGui::Button(Strings::Connect(), ImVec2(-1, 30))) {
             Connect();
         }
-        if (ImGui::Button("Format", ImVec2(-1, 30))) {
+        if (ImGui::Button(Strings::Format(), ImVec2(-1, 30))) {
             Format();
         }
     }
@@ -151,47 +147,47 @@ void WfsApp::RenderConnectPanel() {
     // 连接状态
     ImGui::Separator();
     if (connected_) {
-        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Connected");
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s", Strings::Connected());
     } else {
-        ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "Disconnected");
+        ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "%s", Strings::Disconnected());
     }
 }
 
 void WfsApp::RenderFileList() {
     // 工具栏
-    if (ImGui::Button("Refresh") && connected_) {
+    if (ImGui::Button(Strings::Refresh()) && connected_) {
         RefreshList();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Up") && connected_) {
+    if (ImGui::Button(Strings::Up()) && connected_) {
         NavigateUp();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Import") && connected_) {
+    if (ImGui::Button(Strings::Import()) && connected_) {
         ImportFile();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Export") && connected_ && selectedIndex_ >= 0) {
+    if (ImGui::Button(Strings::Export()) && connected_ && selectedIndex_ >= 0) {
         ExportSelected();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Delete") && connected_ && selectedIndex_ >= 0) {
+    if (ImGui::Button(Strings::Delete()) && connected_ && selectedIndex_ >= 0) {
         DeleteSelected();
     }
     
     ImGui::Separator();
     
     // 当前路径
-    ImGui::Text("Path: %s", currentPath_.empty() ? "\\" : currentPath_.c_str());
+    ImGui::Text("%s %s", Strings::Path(), currentPath_.empty() ? "\\" : currentPath_.c_str());
     
     ImGui::Separator();
     
     // 文件列表表格
     if (ImGui::BeginTable("Files", 3, 
         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0.6f);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80);
-        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 80);
+        ImGui::TableSetupColumn(Strings::Name(), ImGuiTableColumnFlags_WidthStretch, 0.6f);
+        ImGui::TableSetupColumn(Strings::Type(), ImGuiTableColumnFlags_WidthFixed, 80);
+        ImGui::TableSetupColumn(Strings::Size(), ImGuiTableColumnFlags_WidthFixed, 80);
         ImGui::TableHeadersRow();
         
         if (connected_) {
@@ -203,7 +199,7 @@ void WfsApp::RenderFileList() {
                     NavigateUp();
                 }
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("<UP>");
+                ImGui::Text("%s", Strings::UpDir());
                 ImGui::TableSetColumnIndex(2);
                 ImGui::Text("");
             }
@@ -230,15 +226,15 @@ void WfsApp::RenderFileList() {
                 // 右键菜单
                 if (ImGui::BeginPopupContextItem()) {
                     if (entry.isDirectory) {
-                        if (ImGui::MenuItem("Open")) NavigateTo(entry);
+                        if (ImGui::MenuItem(Strings::Open())) NavigateTo(entry);
                     }
-                    if (ImGui::MenuItem("Export")) { selectedIndex_ = i; ExportSelected(); }
-                    if (ImGui::MenuItem("Delete")) { selectedIndex_ = i; DeleteSelected(); }
+                    if (ImGui::MenuItem(Strings::Export())) { selectedIndex_ = i; ExportSelected(); }
+                    if (ImGui::MenuItem(Strings::Delete())) { selectedIndex_ = i; DeleteSelected(); }
                     ImGui::EndPopup();
                 }
                 
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text(entry.isDirectory ? "<DIR>" : "File");
+                ImGui::Text("%s", entry.isDirectory ? Strings::DirType() : Strings::FileType());
                 ImGui::TableSetColumnIndex(2);
                 if (!entry.isDirectory) {
                     char sizeStr[32];
@@ -252,8 +248,7 @@ void WfsApp::RenderFileList() {
     }
     
     if (!connected_) {
-        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), 
-            "Select OTP, SEEPROM and drive, then click Connect");
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "%s", Strings::SelectPrompt());
     }
 }
 
@@ -266,9 +261,9 @@ void WfsApp::RenderStatusBar() {
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar);
     
     if (connected_) {
-        ImGui::Text("Connected | %zu files", entries_.size());
+        ImGui::Text("%s", Strings::FilesCount(entries_.size()));
     } else {
-        ImGui::Text("Disconnected");
+        ImGui::Text("%s", Strings::Disconnected());
     }
     
     ImGui::End();
@@ -276,19 +271,19 @@ void WfsApp::RenderStatusBar() {
 
 void WfsApp::Connect() {
     if (strlen(otpPath_) == 0 || strlen(seepromPath_) == 0) {
-        ShowErrorDialog("Missing Files", "Please select OTP and SEEPROM files.");
+        ShowErrorDialog(Strings::ErrMissingFiles(), Strings::ErrMissingFilesMsg());
         return;
     }
     
     std::string devicePath = GetSelectedDrivePath();
     if (devicePath.empty()) {
-        ShowErrorDialog("No Drive", "Please select a drive.");
+        ShowErrorDialog(Strings::ErrNoDrive(), Strings::ErrNoDriveMsg());
         return;
     }
     
     ConnectError error = wfs_.Connect(otpPath_, seepromPath_, devicePath);
     if (error != ConnectError::None) {
-        ShowErrorDialog("Connection Failed", WfsManager::GetErrorDescription(error));
+        ShowErrorDialog(Strings::ErrConnectFailed(), Strings::TranslateError(error));
         return;
     }
     
@@ -300,8 +295,7 @@ void WfsApp::Connect() {
 
 void WfsApp::Disconnect() {
     if (operationCount_ > 0) {
-        ShowErrorDialog("Operation In Progress", 
-            "Cannot disconnect while operations are in progress.");
+        ShowErrorDialog(Strings::ErrOperationInProgress(), Strings::ErrOperationInProgressMsg());
         return;
     }
     
@@ -314,34 +308,33 @@ void WfsApp::Disconnect() {
 
 void WfsApp::Format() {
     if (strlen(otpPath_) == 0 || strlen(seepromPath_) == 0) {
-        ShowErrorDialog("Missing Files", "Please select OTP and SEEPROM files.");
+        ShowErrorDialog(Strings::ErrMissingFiles(), Strings::ErrMissingFilesMsg());
         return;
     }
     
-    // 警告对话框
-    ImGui::OpenPopup("Format Warning");
-    if (ImGui::BeginPopupModal("Format Warning", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "!!! WARNING !!!");
-        ImGui::Text("Formatting will ERASE ALL DATA!");
-        ImGui::Text("This action cannot be undone!");
+    ImGui::OpenPopup(Strings::FormatWarning());
+    if (ImGui::BeginPopupModal(Strings::FormatWarning(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", Strings::FormatWarningTitle());
+        ImGui::Text("%s", Strings::FormatWarningMsg1());
+        ImGui::Text("%s", Strings::FormatWarningMsg2());
         ImGui::Separator();
         
         static bool confirmed = false;
-        ImGui::Checkbox("I understand, proceed with format", &confirmed);
+        ImGui::Checkbox(Strings::FormatConfirm(), &confirmed);
         
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        if (ImGui::Button(Strings::Cancel(), ImVec2(120, 0))) {
             confirmed = false;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
         
         if (confirmed) {
-            if (ImGui::Button("Format", ImVec2(120, 0))) {
+            if (ImGui::Button(Strings::Format(), ImVec2(120, 0))) {
                 std::string devicePath = GetSelectedDrivePath();
                 ConnectError error = wfs_.Format(otpPath_, seepromPath_, devicePath);
                 
                 if (error != ConnectError::None) {
-                    ShowErrorDialog("Format Failed", WfsManager::GetErrorDescription(error));
+                    ShowErrorDialog(Strings::FormatFailed(), Strings::TranslateError(error));
                 } else {
                     connected_ = true;
                     currentPath_ = "\\";
@@ -353,7 +346,7 @@ void WfsApp::Format() {
             }
         } else {
             ImGui::BeginDisabled();
-            ImGui::Button("Format", ImVec2(120, 0));
+            ImGui::Button(Strings::Format(), ImVec2(120, 0));
             ImGui::EndDisabled();
         }
         
@@ -367,14 +360,12 @@ void WfsApp::RefreshList() {
     entries_.clear();
     auto dirEntries = wfs_.ListDirectory(currentPath_);
     
-    // 分离目录和文件
     std::vector<FileEntry> dirs, files;
     for (const auto& e : dirEntries) {
         if (e.is_directory) dirs.push_back({e.name, true, 0});
         else files.push_back({e.name, false, e.size});
     }
     
-    // 先目录后文件，按名称排序
     auto cmp = [](const FileEntry& a, const FileEntry& b) { return a.name < b.name; };
     std::sort(dirs.begin(), dirs.end(), cmp);
     std::sort(files.begin(), files.end(), cmp);
@@ -408,28 +399,25 @@ void WfsApp::DeleteSelected() {
     const auto& entry = entries_[selectedIndex_];
     if (entry.name == "." || entry.name == "..") return;
     
-    // 确认对话框
     std::string msg = entry.isDirectory ?
-        "Delete folder and all contents?\n\n" + entry.name :
-        "Delete file?\n\n" + entry.name;
+        std::string(Strings::DeleteFolderMsg()) + entry.name :
+        std::string(Strings::DeleteFileMsg()) + entry.name;
     
-    ImGui::OpenPopup("Confirm Delete");
-    if (ImGui::BeginPopupModal("Confirm Delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::OpenPopup(Strings::ConfirmDelete());
+    if (ImGui::BeginPopupModal(Strings::ConfirmDelete(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("%s", msg.c_str());
         ImGui::Separator();
         
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        if (ImGui::Button(Strings::Cancel(), ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Delete", ImVec2(120, 0))) {
+        if (ImGui::Button(Strings::Delete(), ImVec2(120, 0))) {
             if (!BeginOperation()) {
                 ImGui::CloseCurrentPopup();
                 return;
             }
             
-            std::string path = currentPath_ == "\\" ? 
-                "\\" + entry.name : currentPath_ + "\\" + entry.name;
             bool success = wfs_.DeleteEntry(currentPath_, entry.name, entry.isDirectory);
             
             EndOperation();
@@ -439,7 +427,7 @@ void WfsApp::DeleteSelected() {
                 selectedIndex_ = -1;
                 RefreshList();
             } else {
-                ShowErrorDialog("Delete Failed", "Could not delete the selected item.");
+                ShowErrorDialog(Strings::ErrDeleteFailed(), Strings::ErrDeleteFailedMsg());
             }
             ImGui::CloseCurrentPopup();
         }
@@ -473,7 +461,7 @@ void WfsApp::ImportFile() {
             wfs_.Flush();
             RefreshList();
         } else {
-            ShowErrorDialog("Import Failed", "Could not import the file.");
+            ShowErrorDialog(Strings::ErrImportFailed(), Strings::ErrImportFailedMsg());
         }
     }
 }
@@ -504,7 +492,7 @@ void WfsApp::ExportSelected() {
         EndOperation();
         
         if (!success) {
-            ShowErrorDialog("Export Failed", "Could not export the file.");
+            ShowErrorDialog(Strings::ErrExportFailed(), Strings::ErrExportFailedMsg());
         }
     }
 }
@@ -514,7 +502,7 @@ void WfsApp::ShowErrorDialog(const std::string& title, const std::string& messag
     if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("%s", message.c_str());
         ImGui::Separator();
-        if (ImGui::Button("OK", ImVec2(120, 0))) {
+        if (ImGui::Button(Strings::OK(), ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
