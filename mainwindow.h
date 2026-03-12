@@ -20,12 +20,13 @@ private:
     HWND hDriveEdit_;
     HWND hConnectBtn_;
     HWND hDisconnectBtn_;
-    HWND hFileTree_;
+    HWND hPathLabel_;
+    HWND hFileList_;
     
     WfsManager wfs_;
-    std::string selectedPath_;
+    std::string currentPath_;
     std::string selectedName_;
-    std::string selectedParentPath_;
+    std::string selectedPath_;
     bool selectedIsDir_ = false;
     
     void CreateControls();
@@ -34,8 +35,10 @@ private:
     void OnDisconnect();
     void OnDelete();
     void OnExport();
-    void RefreshTree();
-    void PopulateTreeItem(HTREEITEM hParent, const std::string& path);
+    void OnImport();
+    void NavigateTo(const std::string& name, bool isDir);
+    void RefreshList();
+    void UpdateSelection();
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
     
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

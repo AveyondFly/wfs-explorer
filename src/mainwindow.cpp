@@ -9,13 +9,12 @@
 
 static MainWindow* g_pThis = nullptr;
 
-// 辅助函数：检查文件是否存在
 static bool FileExists(const char* path) {
     struct stat buffer;
     return (stat(path, &buffer) == 0);
 }
 
-MainWindow::MainWindow(HINSTANCE hInstance) : hInstance_(hInstance) {
+MainWindow::MainWindow(HINSTANCE hInstance) : hInstance_(hInstance), currentPath_("\\") {
     g_pThis = this;
 }
 
@@ -24,7 +23,6 @@ MainWindow::~MainWindow() {
 }
 
 int MainWindow::Run() {
-    // 注册窗口类
     WNDCLASSEXA wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXA);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -35,13 +33,11 @@ int MainWindow::Run() {
     wc.lpszClassName = "WFSExplorerWindow";
     RegisterClassExA(&wc);
     
-    // 初始化通用控件
     INITCOMMONCONTROLSEX icex;
     icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC = ICC_TREEVIEW_CLASSES | ICC_STANDARD_CLASSES;
+    icex.dwICC = ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES;
     InitCommonControlsEx(&icex);
     
-    // 创建主窗口
     hWnd_ = CreateWindowExA(
         WS_EX_ACCEPTFILES,
         "WFSExplorerWindow",
@@ -53,13 +49,11 @@ int MainWindow::Run() {
     );
     
     SetWindowLongPtr(hWnd_, GWLP_USERDATA, (LONG_PTR)this);
-    
     CreateControls();
     
     ShowWindow(hWnd_, SW_SHOW);
     UpdateWindow(hWnd_);
     
-    // 消息循环
     MSG msg;
     while (GetMessage(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
@@ -70,11 +64,10 @@ int MainWindow::Run() {
 }
 
 void MainWindow::CreateControls() {
-    // 左侧面板背景
+    // 左侧面板
     CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_GRAYRECT,
         10, 10, 250, 200, hWnd_, nullptr, hInstance_, nullptr);
     
-    // OTP 选择
     CreateWindowExA(0, "STATIC", "OTP File:", WS_CHILD | WS_VISIBLE,
         20, 20, 80, 20, hWnd_, nullptr, hInstance_, nullptr);
     hOtpEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -82,7 +75,6 @@ void MainWindow::CreateControls() {
     CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 45, 30, 25, hWnd_, (HMENU)1001, hInstance_, nullptr);
     
-    // SEEPROM 选择
     CreateWindowExA(0, "STATIC", "SEEPROM File:", WS_CHILD | WS_VISIBLE,
         20, 80, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
     hSeepromEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -90,7 +82,6 @@ void MainWindow::CreateControls() {
     CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 105, 30, 25, hWnd_, (HMENU)1002, hInstance_, nullptr);
     
-    // Device 选择
     CreateWindowExA(0, "STATIC", "Device File:", WS_CHILD | WS_VISIBLE,
         20, 140, 100, 20, hWnd_, nullptr, hInstance_, nullptr);
     hDriveEdit_ = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -98,48 +89,69 @@ void MainWindow::CreateControls() {
     CreateWindowExA(0, "BUTTON", "...", WS_CHILD | WS_VISIBLE,
         185, 165, 30, 25, hWnd_, (HMENU)1003, hInstance_, nullptr);
     
-    // 按钮
     hConnectBtn_ = CreateWindowExA(0, "BUTTON", "Connect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         10, 220, 80, 30, hWnd_, (HMENU)1010, hInstance_, nullptr);
     hDisconnectBtn_ = CreateWindowExA(0, "BUTTON", "Disconnect", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_DISABLED,
         100, 220, 80, 30, hWnd_, (HMENU)1011, hInstance_, nullptr);
     
-    // 文件树
-    hFileTree_ = CreateWindowExA(WS_EX_CLIENTEDGE, WC_TREEVIEWA, "", 
-        WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
-        280, 10, 500, 540, hWnd_, (HMENU)2000, hInstance_, nullptr);
+    // 当前路径标签
+    hPathLabel_ = CreateWindowExA(0, "STATIC", "Current: \\", WS_CHILD | WS_VISIBLE | SS_SUNKEN,
+        280, 10, 500, 25, hWnd_, nullptr, hInstance_, nullptr);
     
-    // 启用拖放
+    // 文件列表 (ListView)
+    hFileList_ = CreateWindowExA(WS_EX_CLIENTEDGE, WC_LISTVIEWA, "", 
+        WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL,
+        280, 40, 500, 510, hWnd_, (HMENU)2000, hInstance_, nullptr);
+    
+    // 设置列表列
+    LVCOLUMNA lvc = {0};
+    lvc.mask = LVCF_TEXT | LVCF_WIDTH;
+    
+    lvc.pszText = (LPSTR)"Name";
+    lvc.cx = 280;
+    ListView_InsertColumn(hFileList_, 0, &lvc);
+    
+    lvc.pszText = (LPSTR)"Type";
+    lvc.cx = 80;
+    ListView_InsertColumn(hFileList_, 1, &lvc);
+    
+    lvc.pszText = (LPSTR)"Size";
+    lvc.cx = 100;
+    ListView_InsertColumn(hFileList_, 2, &lvc);
+    
     DragAcceptFiles(hWnd_, TRUE);
 }
 
 void MainWindow::ShowContextMenu(int x, int y) {
-    if (!wfs_.IsConnected() || selectedPath_.empty()) return;
+    if (!wfs_.IsConnected()) return;
     
-    // 创建弹出菜单
     HMENU hMenu = CreatePopupMenu();
     
-    if (selectedIsDir_) {
-        AppendMenuA(hMenu, MF_STRING, 3001, "Export directory...");
-    } else {
-        AppendMenuA(hMenu, MF_STRING, 3001, "Export file...");
+    // 如果有选中项
+    if (!selectedName_.empty()) {
+        if (selectedIsDir_) {
+            AppendMenuA(hMenu, MF_STRING, 3001, "Open folder");
+            AppendMenuA(hMenu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuA(hMenu, MF_STRING, 3002, "Export folder...");
+        } else {
+            AppendMenuA(hMenu, MF_STRING, 3002, "Export file...");
+        }
+        AppendMenuA(hMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuA(hMenu, MF_STRING, 3003, "Delete");
     }
-    AppendMenuA(hMenu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuA(hMenu, MF_STRING, 3002, "Delete");
     
-    // 显示菜单
+    // 总是显示导入选项
+    AppendMenuA(hMenu, MF_STRING, 3004, "Import file here...");
+    
     TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_RIGHTBUTTON, x, y, 0, hWnd_, nullptr);
     DestroyMenu(hMenu);
 }
 
 void MainWindow::OnExport() {
-    if (!wfs_.IsConnected() || selectedPath_.empty()) return;
+    if (!wfs_.IsConnected() || selectedName_.empty()) return;
     
-    // 保存文件对话框
     OPENFILENAMEA ofn = {0};
     char filename[MAX_PATH] = {0};
-    
-    // 默认文件名
     strncpy(filename, selectedName_.c_str(), MAX_PATH - 1);
     
     ofn.lStructSize = sizeof(ofn);
@@ -148,12 +160,6 @@ void MainWindow::OnExport() {
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrDefExt = "";
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    
-    if (selectedIsDir_) {
-        ofn.lpstrFilter = "All Files\0*.*\0";
-    } else {
-        ofn.lpstrFilter = "All Files\0*.*\0";
-    }
     
     if (GetSaveFileNameA(&ofn)) {
         if (wfs_.ExportFile(selectedPath_, filename)) {
@@ -164,35 +170,56 @@ void MainWindow::OnExport() {
     }
 }
 
+void MainWindow::OnImport() {
+    if (!wfs_.IsConnected()) return;
+    
+    OPENFILENAMEA ofn = {0};
+    char filename[MAX_PATH] = {0};
+    
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hWnd_;
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    
+    if (GetOpenFileNameA(&ofn)) {
+        // 从路径提取文件名
+        std::string filepath = filename;
+        std::string name = filepath;
+        size_t pos = filepath.find_last_of("\\/");
+        if (pos != std::string::npos) {
+            name = filepath.substr(pos + 1);
+        }
+        
+        if (wfs_.ImportFile(filepath, currentPath_, name)) {
+            wfs_.Flush();
+            RefreshList();
+            MessageBoxA(hWnd_, "File imported successfully!", "Success", MB_OK | MB_ICONINFORMATION);
+        } else {
+            MessageBoxA(hWnd_, "Failed to import file.", "Error", MB_OK | MB_ICONERROR);
+        }
+    }
+}
+
 void MainWindow::OnConnect() {
     char otpPath[MAX_PATH], seepromPath[MAX_PATH], devicePath[MAX_PATH];
     GetWindowTextA(hOtpEdit_, otpPath, MAX_PATH);
     GetWindowTextA(hSeepromEdit_, seepromPath, MAX_PATH);
     GetWindowTextA(hDriveEdit_, devicePath, MAX_PATH);
     
-    // 检查路径是否为空
     if (strlen(otpPath) == 0 || strlen(seepromPath) == 0 || strlen(devicePath) == 0) {
         MessageBoxA(hWnd_, "Please select all required files:\n- OTP File\n- SEEPROM File\n- Device File", 
                    "Missing Files", MB_OK | MB_ICONWARNING);
         return;
     }
     
-    // 检查文件是否存在
-    if (!FileExists(otpPath)) {
-        MessageBoxA(hWnd_, "OTP file not found.", "File Not Found", MB_OK | MB_ICONERROR);
-        return;
-    }
-    if (!FileExists(seepromPath)) {
-        MessageBoxA(hWnd_, "SEEPROM file not found.", "File Not Found", MB_OK | MB_ICONERROR);
-        return;
-    }
-    if (!FileExists(devicePath)) {
-        MessageBoxA(hWnd_, "Device file not found.", "File Not Found", MB_OK | MB_ICONERROR);
+    if (!FileExists(otpPath) || !FileExists(seepromPath) || !FileExists(devicePath)) {
+        MessageBoxA(hWnd_, "One or more files not found.", "File Not Found", MB_OK | MB_ICONERROR);
         return;
     }
     
     if (!wfs_.Connect(otpPath, seepromPath, devicePath)) {
-        MessageBoxA(hWnd_, "Failed to connect to WFS device.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a valid WFS device\n- Device is corrupted", 
+        MessageBoxA(hWnd_, "Failed to connect to WFS device.\n\nPossible reasons:\n- Invalid OTP/SEEPROM\n- Not a valid WFS device", 
                    "Connection Failed", MB_OK | MB_ICONERROR);
         return;
     }
@@ -203,7 +230,8 @@ void MainWindow::OnConnect() {
     EnableWindow(hSeepromEdit_, FALSE);
     EnableWindow(hDriveEdit_, FALSE);
     
-    RefreshTree();
+    currentPath_ = "\\";
+    RefreshList();
     MessageBoxA(hWnd_, "Connected successfully!", "Info", MB_OK | MB_ICONINFORMATION);
 }
 
@@ -216,88 +244,171 @@ void MainWindow::OnDisconnect() {
     EnableWindow(hSeepromEdit_, TRUE);
     EnableWindow(hDriveEdit_, TRUE);
     
-    // 清空树和选中状态
-    TreeView_DeleteAllItems(hFileTree_);
-    selectedPath_.clear();
+    ListView_DeleteAllItems(hFileList_);
+    SetWindowTextA(hPathLabel_, "Current: \\");
+    currentPath_ = "\\";
     selectedName_.clear();
-    selectedParentPath_.clear();
+    selectedPath_.clear();
     
     MessageBoxA(hWnd_, "Disconnected successfully.", "Info", MB_OK);
 }
 
 void MainWindow::OnDelete() {
-    // 检查是否已连接
-    if (!wfs_.IsConnected()) {
-        MessageBoxA(hWnd_, "Not connected. Please connect first.", "Error", MB_OK | MB_ICONERROR);
-        return;
-    }
-    
-    if (selectedPath_.empty()) {
-        MessageBoxA(hWnd_, "No item selected.", "Error", MB_OK | MB_ICONWARNING);
-        return;
-    }
+    if (!wfs_.IsConnected() || selectedName_.empty()) return;
     
     std::string msg = selectedIsDir_ ? 
-        ("Delete directory and all contents?\n\n" + selectedName_) :
+        ("Delete folder and all contents?\n\n" + selectedName_) :
         ("Delete file?\n\n" + selectedName_);
     
     if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Delete", MB_YESNO | MB_ICONQUESTION) != IDYES) {
         return;
     }
     
-    if (wfs_.DeleteEntry(selectedParentPath_, selectedName_, selectedIsDir_)) {
+    if (wfs_.DeleteEntry(currentPath_, selectedName_, selectedIsDir_)) {
         wfs_.Flush();
-        selectedPath_.clear();  // 清空选中状态
-        RefreshTree();
+        selectedName_.clear();
+        selectedPath_.clear();
+        RefreshList();
         MessageBoxA(hWnd_, "Deleted successfully!", "Success", MB_OK | MB_ICONINFORMATION);
     } else {
-        MessageBoxA(hWnd_, "Failed to delete.\n\nThe file may be in use or protected.", "Delete Failed", MB_OK | MB_ICONERROR);
+        MessageBoxA(hWnd_, "Failed to delete.", "Error", MB_OK | MB_ICONERROR);
     }
 }
 
-void MainWindow::RefreshTree() {
-    TreeView_DeleteAllItems(hFileTree_);
+void MainWindow::NavigateTo(const std::string& name, bool isDir) {
+    if (name == ".") {
+        // 当前目录，什么都不做
+        return;
+    }
+    
+    if (name == "..") {
+        // 返回上层
+        if (currentPath_ == "\\") return;  // 已经是根目录
+        
+        size_t pos = currentPath_.find_last_of('\\');
+        if (pos == 0) {
+            currentPath_ = "\\";
+        } else {
+            currentPath_ = currentPath_.substr(0, pos);
+        }
+        RefreshList();
+        return;
+    }
+    
+    // 进入子目录
+    if (!isDir) return;
+    
+    if (currentPath_ == "\\") {
+        currentPath_ = "\\" + name;
+    } else {
+        currentPath_ = currentPath_ + "\\" + name;
+    }
+    RefreshList();
+}
+
+void MainWindow::RefreshList() {
+    ListView_DeleteAllItems(hFileList_);
     
     if (!wfs_.IsConnected()) return;
     
-    TVINSERTSTRUCTA tvi = {0};
-    tvi.hParent = TVI_ROOT;
-    tvi.hInsertAfter = TVI_LAST;
-    tvi.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-    tvi.item.pszText = (LPSTR)"\\";
-    tvi.item.cChildren = 1;
-    tvi.item.lParam = (LPARAM)new std::string("\\");
+    // 更新路径标签
+    std::string labelText = "Current: " + currentPath_;
+    SetWindowTextA(hPathLabel_, labelText.c_str());
     
-    HTREEITEM hRoot = TreeView_InsertItem(hFileTree_, &tvi);
+    LVITEMA lvi = {0};
+    lvi.mask = LVIF_TEXT | LVIF_PARAM;
     
-    PopulateTreeItem(hRoot, "\\");
+    int row = 0;
+    
+    // 添加 . 和 .. (除非是根目录)
+    if (currentPath_ != "\\") {
+        // .
+        lvi.iItem = row;
+        lvi.iSubItem = 0;
+        lvi.pszText = (LPSTR)".";
+        lvi.lParam = 0;
+        ListView_InsertItem(hFileList_, &lvi);
+        ListView_SetItemText(hFileList_, row, 1, (LPSTR)"<DIR>");
+        ListView_SetItemText(hFileList_, row, 2, (LPSTR)"");
+        row++;
+        
+        // ..
+        lvi.iItem = row;
+        lvi.pszText = (LPSTR)"..";
+        ListView_InsertItem(hFileList_, &lvi);
+        ListView_SetItemText(hFileList_, row, 1, (LPSTR)"<UP>");
+        ListView_SetItemText(hFileList_, row, 2, (LPSTR)"");
+        row++;
+    }
+    
+    // 获取目录内容
+    auto entries = wfs_.ListDirectory(currentPath_);
+    
+    // 先排序：文件夹在前，然后文件
+    std::vector<DirEntry> dirs, files;
+    for (const auto& e : entries) {
+        if (e.is_directory) dirs.push_back(e);
+        else files.push_back(e);
+    }
+    
+    // 添加文件夹
+    for (const auto& entry : dirs) {
+        lvi.iItem = row;
+        lvi.pszText = (LPSTR)entry.name.c_str();
+        lvi.lParam = (LPARAM)new std::string(entry.name);
+        ListView_InsertItem(hFileList_, &lvi);
+        ListView_SetItemText(hFileList_, row, 1, (LPSTR)"<DIR>");
+        ListView_SetItemText(hFileList_, row, 2, (LPSTR)"");
+        row++;
+    }
+    
+    // 添加文件
+    char sizeStr[32];
+    for (const auto& entry : files) {
+        lvi.iItem = row;
+        lvi.pszText = (LPSTR)entry.name.c_str();
+        lvi.lParam = (LPARAM)new std::string(entry.name);
+        ListView_InsertItem(hFileList_, &lvi);
+        ListView_SetItemText(hFileList_, row, 1, (LPSTR)"File");
+        snprintf(sizeStr, sizeof(sizeStr), "%u", entry.size);
+        ListView_SetItemText(hFileList_, row, 2, sizeStr);
+        row++;
+    }
 }
 
-void MainWindow::PopulateTreeItem(HTREEITEM hParent, const std::string& path) {
-    auto entries = wfs_.ListDirectory(path);
+void MainWindow::UpdateSelection() {
+    int idx = ListView_GetNextItem(hFileList_, -1, LVNI_SELECTED);
+    if (idx == -1) {
+        selectedName_.clear();
+        selectedPath_.clear();
+        return;
+    }
     
-    for (const auto& entry : entries) {
-        std::string fullPath = (path == "\\") ? ("\\" + entry.name) : (path + "\\" + entry.name);
-        
-        std::string displayName = entry.name;
-        if (entry.is_directory) {
-            displayName = "[" + entry.name + "]";
-        }
-        
-        TVINSERTSTRUCTA tvi = {0};
-        tvi.hParent = hParent;
-        tvi.hInsertAfter = TVI_LAST;
-        tvi.item.mask = TVIF_TEXT | TVIF_CHILDREN | TVIF_PARAM;
-        tvi.item.pszText = (LPSTR)displayName.c_str();
-        tvi.item.cChildren = entry.is_directory ? 1 : 0;
-        tvi.item.lParam = (LPARAM)new std::string(fullPath);
-        
-        HTREEITEM hItem = TreeView_InsertItem(hFileTree_, &tvi);
-        
-        // 如果是目录，预填充子项
-        if (entry.is_directory) {
-            PopulateTreeItem(hItem, fullPath);
-        }
+    LVITEMA lvi = {0};
+    lvi.iItem = idx;
+    lvi.iSubItem = 0;
+    lvi.mask = LVIF_PARAM;
+    ListView_GetItem(hFileList_, &lvi);
+    
+    if (lvi.lParam) {
+        selectedName_ = *(std::string*)lvi.lParam;
+    } else {
+        // 可能是 . 或 ..
+        char name[256] = {0};
+        ListView_GetItemText(hFileList_, idx, 0, name, sizeof(name));
+        selectedName_ = name;
+    }
+    
+    // 判断类型
+    char type[32] = {0};
+    ListView_GetItemText(hFileList_, idx, 1, type, sizeof(type));
+    selectedIsDir_ = (strcmp(type, "<DIR>") == 0 || strcmp(type, "<UP>") == 0 || selectedName_ == "." || selectedName_ == "..");
+    
+    // 计算完整路径
+    if (currentPath_ == "\\") {
+        selectedPath_ = "\\" + selectedName_;
+    } else {
+        selectedPath_ = currentPath_ + "\\" + selectedName_;
     }
 }
 
@@ -306,11 +417,9 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_COMMAND: {
             int id = LOWORD(wParam);
             
-            // 文件选择按钮
             if (id >= 1001 && id <= 1003) {
                 OPENFILENAMEA ofn = {0};
                 char filename[MAX_PATH] = {0};
-                
                 ofn.lStructSize = sizeof(ofn);
                 ofn.hwndOwner = hWnd_;
                 ofn.lpstrFile = filename;
@@ -323,98 +432,33 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                     else if (id == 1003) SetWindowTextA(hDriveEdit_, filename);
                 }
             }
-            // 连接按钮
-            else if (id == 1010) {
-                OnConnect();
-            }
-            // 断开按钮
-            else if (id == 1011) {
-                OnDisconnect();
-            }
-            // 右键菜单 - 导出
-            else if (id == 3001) {
-                OnExport();
-            }
-            // 右键菜单 - 删除
-            else if (id == 3002) {
-                OnDelete();
-            }
+            else if (id == 1010) OnConnect();
+            else if (id == 1011) OnDisconnect();
+            else if (id == 3001) { NavigateTo(selectedName_, true); }  // Open folder
+            else if (id == 3002) OnExport();
+            else if (id == 3003) OnDelete();
+            else if (id == 3004) OnImport();
             break;
         }
         
         case WM_NOTIFY: {
             LPNMHDR pnmh = (LPNMHDR)lParam;
             if (pnmh->idFrom == 2000) {
-                // 选中变化
-                if (pnmh->code == TVN_SELCHANGED) {
-                    LPNMTREEVIEWA pnmtv = (LPNMTREEVIEWA)lParam;
-                    TVITEMA item = pnmtv->itemNew;
-                    
-                    if (item.lParam) {
-                        std::string* pPath = (std::string*)item.lParam;
-                        selectedPath_ = *pPath;
-                        
-                        // 计算父路径和名称
-                        size_t pos = selectedPath_.find_last_of('\\');
-                        if (pos == 0) {
-                            selectedParentPath_ = "\\";
-                            selectedName_ = selectedPath_.substr(1);
-                        } else if (pos != std::string::npos) {
-                            selectedParentPath_ = selectedPath_.substr(0, pos);
-                            selectedName_ = selectedPath_.substr(pos + 1);
-                        }
-                        
-                        selectedIsDir_ = (selectedName_[0] == '[');
-                        if (selectedIsDir_) {
-                            selectedName_ = selectedName_.substr(1, selectedName_.length() - 2);
-                        }
+                // 双击
+                if (pnmh->code == NM_DBLCLK) {
+                    UpdateSelection();
+                    if (selectedName_ == "." || selectedName_ == "..") {
+                        NavigateTo(selectedName_, true);
+                    } else if (selectedIsDir_) {
+                        NavigateTo(selectedName_, true);
                     }
                 }
-                // 右键点击
+                // 右键菜单
                 else if (pnmh->code == NM_RCLICK) {
-                    // 获取鼠标位置
+                    UpdateSelection();
                     POINT pt;
                     GetCursorPos(&pt);
-                    
-                    // 获取点击的项
-                    TVHITTESTINFO ht = {0};
-                    ScreenToClient(hFileTree_, &pt);
-                    ht.pt = pt;
-                    SendMessage(hFileTree_, TVM_HITTEST, 0, (LPARAM)&ht);
-                    
-                    if (ht.hItem && (ht.flags & TVHT_ONITEM)) {
-                        // 选中该项
-                        SendMessage(hFileTree_, TVM_SELECTITEM, TVGN_CARET, (LPARAM)ht.hItem);
-                        
-                        // 更新选中信息
-                        TVITEMA item = {0};
-                        item.hItem = ht.hItem;
-                        item.mask = TVIF_PARAM;
-                        SendMessage(hFileTree_, TVM_GETITEM, 0, (LPARAM)&item);
-                        
-                        if (item.lParam) {
-                            std::string* pPath = (std::string*)item.lParam;
-                            selectedPath_ = *pPath;
-                            
-                            size_t pos = selectedPath_.find_last_of('\\');
-                            if (pos == 0) {
-                                selectedParentPath_ = "\\";
-                                selectedName_ = selectedPath_.substr(1);
-                            } else if (pos != std::string::npos) {
-                                selectedParentPath_ = selectedPath_.substr(0, pos);
-                                selectedName_ = selectedPath_.substr(pos + 1);
-                            }
-                            
-                            selectedIsDir_ = (selectedName_[0] == '[');
-                            if (selectedIsDir_) {
-                                selectedName_ = selectedName_.substr(1, selectedName_.length() - 2);
-                            }
-                        }
-                        
-                        // 显示右键菜单
-                        ClientToScreen(hFileTree_, &pt);
-                        ShowContextMenu(pt.x, pt.y);
-                    }
+                    ShowContextMenu(pt.x, pt.y);
                 }
             }
             break;
@@ -422,7 +466,19 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         
         case WM_KEYDOWN: {
             if (wParam == VK_DELETE && wfs_.IsConnected()) {
-                OnDelete();
+                UpdateSelection();
+                if (!selectedName_.empty() && selectedName_ != "." && selectedName_ != "..") {
+                    OnDelete();
+                }
+            }
+            else if (wParam == VK_RETURN) {
+                UpdateSelection();
+                if (selectedIsDir_) {
+                    NavigateTo(selectedName_, true);
+                }
+            }
+            else if (wParam == VK_BACK) {
+                NavigateTo("..", true);
             }
             break;
         }
@@ -431,8 +487,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             HDROP hDrop = (HDROP)wParam;
             
             if (!wfs_.IsConnected()) {
-                MessageBoxA(hWnd_, "Please connect to a device first before importing files.", 
-                           "Not Connected", MB_OK | MB_ICONWARNING);
+                MessageBoxA(hWnd_, "Please connect first.", "Not Connected", MB_OK | MB_ICONWARNING);
                 DragFinish(hDrop);
                 break;
             }
@@ -441,26 +496,27 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             DragQueryFileA(hDrop, 0, droppedFile, MAX_PATH);
             DragFinish(hDrop);
             
-            // 检查文件是否存在
             if (!FileExists(droppedFile)) {
-                MessageBoxA(hWnd_, "The dropped file does not exist.", "File Not Found", MB_OK | MB_ICONERROR);
+                MessageBoxA(hWnd_, "File not found.", "Error", MB_OK | MB_ICONERROR);
                 break;
             }
             
-            // 导入文件到根目录
-            std::string filename = droppedFile;
-            size_t pos = filename.find_last_of("\\/");
+            std::string filepath = droppedFile;
+            std::string name = filepath;
+            size_t pos = filepath.find_last_of("\\/");
             if (pos != std::string::npos) {
-                filename = filename.substr(pos + 1);
+                name = filepath.substr(pos + 1);
             }
             
-            if (wfs_.ImportFile(droppedFile, "\\", filename)) {
-                wfs_.Flush();
-                RefreshTree();
-                MessageBoxA(hWnd_, "File imported successfully!", "Success", MB_OK | MB_ICONINFORMATION);
-            } else {
-                MessageBoxA(hWnd_, "Failed to import file.\n\nThe file may already exist or the device is full.", 
-                           "Import Failed", MB_OK | MB_ICONERROR);
+            std::string msg = "Import file to current directory?\n\n" + currentPath_ + "\\\n" + name;
+            if (MessageBoxA(hWnd_, msg.c_str(), "Confirm Import", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                if (wfs_.ImportFile(filepath, currentPath_, name)) {
+                    wfs_.Flush();
+                    RefreshList();
+                    MessageBoxA(hWnd_, "File imported!", "Success", MB_OK | MB_ICONINFORMATION);
+                } else {
+                    MessageBoxA(hWnd_, "Failed to import.", "Error", MB_OK | MB_ICONERROR);
+                }
             }
             break;
         }
