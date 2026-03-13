@@ -20,7 +20,7 @@ jobs:
       - name: Install MinGW-w64
         run: |
           sudo apt-get update
-          sudo apt-get install -y mingw-w64 g++-mingw-w64-x86-64 cmake
+          sudo apt-get install -y mingw-w64 g++-mingw-w64-x86-64
 
       - name: Clone vcpkg
         run: |
@@ -32,11 +32,22 @@ jobs:
       - name: Create custom triplet
         run: |
           mkdir -p vcpkg/triplets
-          printf 'set(VCPKG_TARGET_ARCHITECTURE x64)\nset(VCPKG_CRT_LINKAGE static)\nset(VCPKG_LIBRARY_LINKAGE static)\nset(VCPKG_ENV_PASSTHROUGH PATH)\nset(VCPKG_CMAKE_SYSTEM_NAME MinGW)\nset(VCPKG_CXX_FLAGS "-std=c++23 -fvisibility=default")\nset(VCPKG_C_FLAGS "-fvisibility=default")\nset(CRYPTOPP_DISABLE_ASM "ON")\n' > vcpkg/triplets/x64-mingw-static-no-hidden.cmake
+          cat > vcpkg/triplets/x64-mingw-static-no-hidden.cmake << 'EOF'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE static)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_ENV_PASSTHROUGH PATH)
+          set(VCPKG_CMAKE_SYSTEM_NAME MinGW)
+          set(VCPKG_CXX_FLAGS "-std=c++23 -fvisibility=default")
+          set(VCPKG_C_FLAGS "-fvisibility=default")
+          set(CRYPTOPP_DISABLE_ASM ON)
+          EOF
 
       - name: Install vcpkg dependencies
         run: |
           ./vcpkg/vcpkg install --triplet x64-mingw-static-no-hidden
+        env:
+          VCPKG_INSTALLED_DIR: ${{ github.workspace }}/vcpkg_installed
 
       - name: Checkout wfslib
         uses: actions/checkout@v4
@@ -47,16 +58,30 @@ jobs:
 
       - name: Build wfslib for MinGW
         run: |
-          cd wfslib
-          mkdir -p build-mingw
-          cd build-mingw
+          WFSLIB_PATH="${{ github.workspace }}/wfslib"
+          VCPKG_PATH="${{ github.workspace }}/vcpkg_installed/x64-mingw-static-no-hidden"
+          
+          # Create MinGW cross-compilation toolchain file
+          cat > $WFSLIB_PATH/mingw-toolchain.cmake << EOF
+          set(CMAKE_SYSTEM_NAME Windows)
+          set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc)
+          set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
+          set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
+          
+          # Add vcpkg to search paths
+          set(CMAKE_PREFIX_PATH "${VCPKG_PATH}")
+          set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32 "${VCPKG_PATH}")
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+          EOF
+          
+          mkdir -p $WFSLIB_PATH/build-mingw
+          cd $WFSLIB_PATH/build-mingw
           cmake .. \
-            -DCMAKE_SYSTEM_NAME=Windows \
-            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
-            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_TOOLCHAIN_FILE=../mingw-toolchain.cmake \
             -DCMAKE_BUILD_TYPE=Release \
-            -DVCPKG_TARGET_TRIPLET=x64-mingw-static-no-hidden \
-            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DBUILD_TESTING=OFF
           cmake --build . --config Release -j$(nproc)
 
