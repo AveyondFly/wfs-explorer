@@ -27,6 +27,9 @@ private:
     int selectedDrive_ = -1;
     std::vector<std::string> drives_;
     
+    // 格式化时的设备类型选择 (0=USB, 1=MLC)
+    int formatDeviceType_ = 0;
+    
     std::string currentPath_;
     std::vector<FileEntry> entries_;
     int selectedIndex_ = -1;

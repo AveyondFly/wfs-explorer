@@ -55,11 +55,9 @@ ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& 
         return ConnectError::OtpInvalidSize;
     }
     
-    // 检查 SEEPROM 文件
-    if (!file_exists(seepromPath)) {
-        return ConnectError::SeepromNotFound;
-    }
-    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+    // 检查 SEEPROM 文件 (USB 需要)
+    bool hasSeeprom = file_exists(seepromPath);
+    if (hasSeeprom && file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
         return ConnectError::SeepromInvalidSize;
     }
     
@@ -69,18 +67,12 @@ ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& 
     }
     
     try {
-        // 加载 OTP 和 SEEPROM
+        // 加载 OTP
         auto otp = OTP::LoadFromFile(otpPath);
         if (!otp) {
             return ConnectError::OtpNotFound;
         }
         
-        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
-        if (!seeprom) {
-            return ConnectError::SeepromNotFound;
-        }
-        
-        key_ = seeprom->GetUSBKey(*otp);
         devicePath_ = devicePath;
         
         // 创建设备 (读写模式)
@@ -94,26 +86,50 @@ ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& 
         
         device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
         
-        // 打开 WFS
-        auto result = WfsDevice::Open(device_, key_);
-        if (!result) {
-            device_.reset();
-            // 根据具体错误返回
-            switch (result.error()) {
-                case WfsError::kAreaHeaderCorrupted:
-                    return ConnectError::NotWfsPartition;
-                case WfsError::kInvalidWfsVersion:
-                    return ConnectError::InvalidWfsVersion;
-                case WfsError::kBlockBadHash:
-                    return ConnectError::KeyMismatch;
-                default:
-                    return ConnectError::UnknownError;
+        // 准备两种密钥尝试
+        std::vector<std::vector<std::byte>> keysToTry;
+        std::vector<WfsDeviceType> keyTypes;
+        
+        // 如果有 SEEPROM，先尝试 USB 密钥
+        if (hasSeeprom) {
+            auto seeprom = SEEPROM::LoadFromFile(seepromPath);
+            if (seeprom) {
+                keysToTry.push_back(seeprom->GetUSBKey(*otp));
+                keyTypes.push_back(WfsDeviceType::USB);
             }
         }
-        wfs_ = *result;
-        return ConnectError::None;
+        
+        // 再尝试 MLC 密钥
+        keysToTry.push_back(otp->GetMLCKey());
+        keyTypes.push_back(WfsDeviceType::MLC);
+        
+        // 尝试每种密钥
+        WfsError lastError = WfsError::kAreaHeaderCorrupted;
+        for (size_t i = 0; i < keysToTry.size(); ++i) {
+            key_ = keysToTry[i];
+            auto result = WfsDevice::Open(device_, key_);
+            if (result) {
+                wfs_ = *result;
+                deviceType_ = keyTypes[i];
+                return ConnectError::None;
+            }
+            lastError = result.error();
+        }
+        
+        // 所有密钥都失败
+        device_.reset();
+        key_.clear();
+        switch (lastError) {
+            case WfsError::kAreaHeaderCorrupted:
+                return ConnectError::NotWfsPartition;
+            case WfsError::kInvalidWfsVersion:
+                return ConnectError::InvalidWfsVersion;
+            case WfsError::kBlockBadHash:
+                return ConnectError::KeyMismatch;
+            default:
+                return ConnectError::UnknownError;
+        }
     } catch (const std::runtime_error& e) {
-        // KeyFile 会抛出 runtime_error 如果大小不对
         std::string msg = e.what();
         if (msg.find("key file size") != std::string::npos) {
             if (msg.find("OTP") != std::string::npos || msg.find("1024") != std::string::npos) {
@@ -127,7 +143,7 @@ ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& 
     }
 }
 
-ConnectError WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath) {
+ConnectError WfsManager::Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath, WfsDeviceType deviceType) {
     Disconnect();
     
     // 检查 OTP 文件
@@ -138,12 +154,14 @@ ConnectError WfsManager::Format(const std::string& otpPath, const std::string& s
         return ConnectError::OtpInvalidSize;
     }
     
-    // 检查 SEEPROM 文件
-    if (!file_exists(seepromPath)) {
-        return ConnectError::SeepromNotFound;
-    }
-    if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
-        return ConnectError::SeepromInvalidSize;
+    // USB 需要 SEEPROM
+    if (deviceType == WfsDeviceType::USB) {
+        if (!file_exists(seepromPath)) {
+            return ConnectError::SeepromNotFound;
+        }
+        if (file_size(seepromPath) != SEEPROM::SEEPROM_SIZE) {
+            return ConnectError::SeepromInvalidSize;
+        }
     }
     
     // 检查设备
@@ -152,19 +170,28 @@ ConnectError WfsManager::Format(const std::string& otpPath, const std::string& s
     }
     
     try {
-        // 加载 OTP 和 SEEPROM
+        // 加载 OTP
         auto otp = OTP::LoadFromFile(otpPath);
         if (!otp) {
             return ConnectError::OtpNotFound;
         }
         
-        auto seeprom = SEEPROM::LoadFromFile(seepromPath);
-        if (!seeprom) {
-            return ConnectError::SeepromNotFound;
+        // 根据设备类型选择密钥
+        DeviceType wfsDeviceType;
+        if (deviceType == WfsDeviceType::USB) {
+            auto seeprom = SEEPROM::LoadFromFile(seepromPath);
+            if (!seeprom) {
+                return ConnectError::SeepromNotFound;
+            }
+            key_ = seeprom->GetUSBKey(*otp);
+            wfsDeviceType = DeviceType::USB;
+        } else {
+            key_ = otp->GetMLCKey();
+            wfsDeviceType = DeviceType::MLC;
         }
         
-        key_ = seeprom->GetUSBKey(*otp);
         devicePath_ = devicePath;
+        deviceType_ = deviceType;
         
         // 创建设备 (读写模式)
         std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
@@ -178,7 +205,7 @@ ConnectError WfsManager::Format(const std::string& otpPath, const std::string& s
         device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
         
         // 创建新的 WFS (格式化)
-        auto result = WfsDevice::Create(device_, key_);
+        auto result = WfsDevice::Create(device_, wfsDeviceType, key_);
         if (!result) {
             device_.reset();
             return ConnectError::UnknownError;

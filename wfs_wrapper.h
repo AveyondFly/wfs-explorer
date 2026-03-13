@@ -25,6 +25,13 @@ enum class ConnectError {
     UnknownError
 };
 
+// 设备类型
+enum class WfsDeviceType {
+    USB,
+    MLC,
+    Unknown
+};
+
 // 目录条目信息
 struct DirEntry {
     std::string name;
@@ -44,10 +51,13 @@ public:
     bool IsConnected() const { return wfs_ != nullptr; }
     
     // 格式化 - 返回具体错误
-    ConnectError Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath);
+    ConnectError Format(const std::string& otpPath, const std::string& seepromPath, const std::string& devicePath, WfsDeviceType deviceType = WfsDeviceType::USB);
     
     // 获取错误描述
     static std::string GetErrorDescription(ConnectError error);
+    
+    // 获取当前设备类型
+    WfsDeviceType GetDeviceType() const { return deviceType_; }
     
     // 文件操作
     std::vector<DirEntry> ListDirectory(const std::string& path);
@@ -63,6 +73,7 @@ private:
     std::shared_ptr<WfsDevice> wfs_;
     std::vector<std::byte> key_;
     std::string devicePath_;
+    WfsDeviceType deviceType_ = WfsDeviceType::Unknown;
 };
 
 #endif // WFS_WRAPPER_H

@@ -51,6 +51,43 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     
+    // 加载中文字体 - 使用系统字体
+    // 字体文件路径 (按优先级排序)
+    const char* fontPaths[] = {
+        "C:\\Windows\\Fonts\\msyh.ttc",      // 微软雅黑
+        "C:\\Windows\\Fonts\\simhei.ttf",    // 黑体
+        "C:\\Windows\\Fonts\\simsun.ttc",    // 宋体
+        "C:\\Windows\\Fonts\\simkai.ttf",    // 楷体
+    };
+    
+    bool fontLoaded = false;
+    for (const char* path : fontPaths) {
+        if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
+            // 加载字体，支持中文和日文范围 (WFS 文件名可能包含日文)
+            io.Fonts->AddFontFromFileTTF(path, 16.0f, nullptr, 
+                io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            fontLoaded = true;
+            break;
+        }
+    }
+    
+    // 如果系统字体都找不到，尝试使用默认字体并扩展字符范围
+    if (!fontLoaded) {
+        ImFontConfig config;
+        config.MergeMode = true;
+        io.Fonts->AddFontDefault();
+        // 尝试加载任何可用的系统字体用于中文
+        WIN32_FIND_DATAA fd;
+        HANDLE hFind = FindFirstFileA("C:\\Windows\\Fonts\\*.ttc", &fd);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            char fullPath[MAX_PATH];
+            snprintf(fullPath, MAX_PATH, "C:\\Windows\\Fonts\\%s", fd.cFileName);
+            io.Fonts->AddFontFromFileTTF(fullPath, 16.0f, &config, 
+                io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            FindClose(hFind);
+        }
+    }
+    
     // 设置主题
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();

@@ -40,6 +40,7 @@ namespace Strings {
     // 连接面板
     inline const char* OtpFile() { return TR("OTP File:", "OTP 文件:"); }
     inline const char* SeepromFile() { return TR("SEEPROM File:", "SEEPROM 文件:"); }
+    inline const char* SeepromOptional() { return TR("(Optional for MLC)", "(MLC 可选)"); }
     inline const char* WiiUPartition() { return TR("Wii U Partition:", "Wii U 分区:"); }
     inline const char* SelectDrive() { return TR("Select drive...", "选择驱动器..."); }
     inline const char* Connect() { return TR("Connect", "连接"); }
@@ -47,6 +48,12 @@ namespace Strings {
     inline const char* Format() { return TR("Format", "格式化"); }
     inline const char* Connected() { return TR("Connected", "已连接"); }
     inline const char* Disconnected() { return TR("Disconnected", "未连接"); }
+    
+    // 设备类型
+    inline const char* DeviceType() { return TR("Device Type:", "设备类型:"); }
+    inline const char* DeviceTypeUSB() { return TR("USB", "USB"); }
+    inline const char* DeviceTypeMLC() { return TR("MLC (Internal)", "MLC (内置存储)"); }
+    inline const char* DeviceTypeUnknown() { return TR("Unknown", "未知"); }
     
     // 文件列表
     inline const char* Refresh() { return TR("Refresh", "刷新"); }
@@ -77,7 +84,8 @@ namespace Strings {
     
     // 错误标题
     inline const char* ErrMissingFiles() { return TR("Missing Files", "缺少文件"); }
-    inline const char* ErrMissingFilesMsg() { return TR("Please select OTP and SEEPROM files.", "请选择 OTP 和 SEEPROM 文件。"); }
+    inline const char* ErrMissingFilesMsg() { return TR("Please select OTP file.", "请选择 OTP 文件。"); }
+    inline const char* ErrMissingSeepromMsg() { return TR("SEEPROM is required for USB devices.", "USB 设备需要 SEEPROM 文件。"); }
     inline const char* ErrNoDrive() { return TR("No Drive", "未选择驱动器"); }
     inline const char* ErrNoDriveMsg() { return TR("Please select a drive.", "请选择一个驱动器。"); }
     inline const char* ErrConnectFailed() { return TR("Connection Failed", "连接失败"); }

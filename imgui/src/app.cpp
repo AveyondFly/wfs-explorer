@@ -95,8 +95,8 @@ void WfsApp::RenderConnectPanel() {
         }
     }
     
-    // SEEPROM 文件
-    ImGui::Text("%s", Strings::SeepromFile());
+    // SEEPROM 文件 (MLC 可选)
+    ImGui::Text("%s %s", Strings::SeepromFile(), Strings::SeepromOptional());
     ImGui::InputText("##seeprom", seepromPath_, sizeof(seepromPath_));
     ImGui::SameLine();
     if (ImGui::Button("...##seeprombrowse")) {
@@ -148,6 +148,14 @@ void WfsApp::RenderConnectPanel() {
     ImGui::Separator();
     if (connected_) {
         ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s", Strings::Connected());
+        // 显示设备类型
+        const char* deviceTypeStr = Strings::DeviceTypeUnknown();
+        switch (wfs_.GetDeviceType()) {
+            case WfsDeviceType::USB: deviceTypeStr = Strings::DeviceTypeUSB(); break;
+            case WfsDeviceType::MLC: deviceTypeStr = Strings::DeviceTypeMLC(); break;
+            default: break;
+        }
+        ImGui::Text("%s %s", Strings::DeviceType(), deviceTypeStr);
     } else {
         ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "%s", Strings::Disconnected());
     }
@@ -270,7 +278,8 @@ void WfsApp::RenderStatusBar() {
 }
 
 void WfsApp::Connect() {
-    if (strlen(otpPath_) == 0 || strlen(seepromPath_) == 0) {
+    // OTP 是必需的
+    if (strlen(otpPath_) == 0) {
         ShowErrorDialog(Strings::ErrMissingFiles(), Strings::ErrMissingFilesMsg());
         return;
     }
@@ -281,6 +290,8 @@ void WfsApp::Connect() {
         return;
     }
     
+    // SEEPROM 可以为空（MLC 设备只需要 OTP）
+    // wfs_wrapper 会自动尝试 USB 和 MLC 密钥
     ConnectError error = wfs_.Connect(otpPath_, seepromPath_, devicePath);
     if (error != ConnectError::None) {
         ShowErrorDialog(Strings::ErrConnectFailed(), Strings::TranslateError(error));
@@ -307,7 +318,8 @@ void WfsApp::Disconnect() {
 }
 
 void WfsApp::Format() {
-    if (strlen(otpPath_) == 0 || strlen(seepromPath_) == 0) {
+    // OTP 是必需的
+    if (strlen(otpPath_) == 0) {
         ShowErrorDialog(Strings::ErrMissingFiles(), Strings::ErrMissingFilesMsg());
         return;
     }
@@ -319,6 +331,23 @@ void WfsApp::Format() {
         ImGui::Text("%s", Strings::FormatWarningMsg2());
         ImGui::Separator();
         
+        // 设备类型选择
+        ImGui::Text("%s", Strings::DeviceType());
+        if (ImGui::RadioButton(Strings::DeviceTypeUSB(), formatDeviceType_ == 0)) {
+            formatDeviceType_ = 0;
+        }
+        ImGui::SameLine();
+        if (ImGui::RadioButton(Strings::DeviceTypeMLC(), formatDeviceType_ == 1)) {
+            formatDeviceType_ = 1;
+        }
+        
+        // USB 需要 SEEPROM
+        if (formatDeviceType_ == 0 && strlen(seepromPath_) == 0) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "%s", Strings::ErrMissingSeepromMsg());
+        }
+        
+        ImGui::Separator();
+        
         static bool confirmed = false;
         ImGui::Checkbox(Strings::FormatConfirm(), &confirmed);
         
@@ -328,10 +357,12 @@ void WfsApp::Format() {
         }
         ImGui::SameLine();
         
-        if (confirmed) {
+        bool canFormat = confirmed && (formatDeviceType_ == 1 || strlen(seepromPath_) > 0);
+        if (canFormat) {
             if (ImGui::Button(Strings::Format(), ImVec2(120, 0))) {
                 std::string devicePath = GetSelectedDrivePath();
-                ConnectError error = wfs_.Format(otpPath_, seepromPath_, devicePath);
+                WfsDeviceType deviceType = (formatDeviceType_ == 0) ? WfsDeviceType::USB : WfsDeviceType::MLC;
+                ConnectError error = wfs_.Format(otpPath_, seepromPath_, devicePath, deviceType);
                 
                 if (error != ConnectError::None) {
                     ShowErrorDialog(Strings::FormatFailed(), Strings::TranslateError(error));
