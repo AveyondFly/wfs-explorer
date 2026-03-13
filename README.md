@@ -7,8 +7,9 @@ A Windows GUI application for managing Wii U WFS (Wii U File System) partitions.
 ## Features
 
 - **Browse WFS Partitions**: Navigate through directories and files on Wii U hard drive partitions
+- **USB & MLC Support**: Automatic detection of USB and MLC (internal storage) device types
 - **File Operations**: Import, export, and delete files from WFS partitions
-- **Format Support**: Format drives as WFS partitions using OTP/SEEPROM keys
+- **Format Support**: Format drives as WFS partitions (USB or MLC type) using OTP/SEEPROM keys
 - **Bilingual UI**: Automatic Chinese/English interface based on Windows system language
 - **Safe Operations**: Protection against disconnect during file operations
 
@@ -29,7 +30,6 @@ wfs-explorer/
 │       ├── wfs_wrapper.cpp/h # WFS library wrapper
 │       └── i18n.cpp/h        # Internationalization
 ├── build-imgui.sh            # Linux cross-compilation script
-├── build-mingw/              # Build output directory
 └── README.md
 ```
 
@@ -102,22 +102,25 @@ The output will be `build-imgui/wfs-explorer.exe`.
 ### Preparation
 
 1. **Obtain OTP and SEEPROM files** from your Wii U console:
-   - `otp.bin` - 1024 bytes, contains encryption keys
-   - `seeprom.bin` - 512 bytes, contains additional keys
+   - `otp.bin` - 1024 bytes, contains encryption keys (required for all devices)
+   - `seeprom.bin` - 512 bytes, contains USB keys (required for USB devices, optional for MLC)
    
    These files are required to decrypt WFS partitions.
 
-2. **Connect Wii U hard drive** to your Windows PC
-   - The drive should contain WFS-formatted partitions
+2. **Connect Wii U storage** to your Windows PC
+   - USB: External hard drive with WFS-formatted partitions
+   - MLC: Wii U internal storage (dumped as disk image)
    - Run the application as Administrator for raw disk access
 
 ### Connecting to a Partition
 
 1. Launch `wfs-explorer.exe` as Administrator
 2. Click `...` next to **OTP File** and select your `otp.bin`
-3. Click `...` next to **SEEPROM File** and select your `seeprom.bin`
+3. (Optional for MLC) Click `...` next to **SEEPROM File** and select your `seeprom.bin`
 4. Select the drive letter from the **Wii U Partition** dropdown
 5. Click **Connect**
+
+The application will automatically detect whether the partition is USB or MLC type and use the appropriate decryption key.
 
 ### File Operations
 
@@ -129,11 +132,16 @@ The output will be `build-imgui/wfs-explorer.exe`.
 
 ### Formatting a Partition
 
-1. Select OTP, SEEPROM, and target drive
-2. Click **Format**
-3. Read the warning carefully
-4. Check "I understand, proceed with format"
-5. Click **Format** to confirm
+1. Select OTP file (required)
+2. Select SEEPROM file (required for USB, not needed for MLC)
+3. Select target drive
+4. Click **Format**
+5. Select device type:
+   - **USB** - External USB hard drive (requires SEEPROM)
+   - **MLC** - Wii U internal storage (no SEEPROM needed)
+6. Read the warning carefully
+7. Check "I understand, proceed with format"
+8. Click **Format** to confirm
 
 **Warning**: Formatting will erase ALL data on the selected partition!
 
@@ -142,7 +150,7 @@ The output will be `build-imgui/wfs-explorer.exe`.
 | Error | Description |
 |-------|-------------|
 | OTP file not found | The specified OTP file does not exist |
-| SEEPROM file not found | The specified SEEPROM file does not exist |
+| SEEPROM file not found | The specified SEEPROM file does not exist (required for USB) |
 | OTP file size invalid | OTP file must be exactly 1024 bytes |
 | SEEPROM file size invalid | SEEPROM file must be exactly 512 bytes |
 | Device/drive not found | The selected drive does not exist |
