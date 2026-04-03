@@ -41,6 +41,7 @@ private:
     void RenderConnectPanel();
     void RenderFileList();
     void RenderStatusBar();
+    void RenderErrorDialog();
     void ShowErrorDialog(const std::string& title, const std::string& message);
     
     void Connect();
@@ -55,6 +56,11 @@ private:
     
     std::string GetSelectedDrivePath();
     void ScanDrives();
+    
+    // Error dialog state
+    bool showErrorDialog_ = false;
+    std::string errorTitle_;
+    std::string errorMessage_;
 };
 
 #endif

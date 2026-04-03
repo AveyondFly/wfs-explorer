@@ -3,7 +3,45 @@
 #include <algorithm>
 #include <sys/stat.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <winioctl.h>
+// Undefine Windows macros that conflict with method names
+#ifdef DeleteFile
+#undef DeleteFile
+#endif
+#ifdef CreateFile
+#undef CreateFile
+#endif
+#ifdef CreateDirectory
+#undef CreateDirectory
+#endif
+#endif
+
+// Store last error details for diagnostics
+static std::string g_lastErrorDetail;
+
 static bool file_exists(const std::string& path) {
+#ifdef _WIN32
+    // On Windows, check if it's a device path (\\.\X:)
+    if (path.length() >= 4 && path.substr(0, 4) == "\\\\.\\") {
+        // Try to open the device to check if it exists
+        HANDLE hDevice = CreateFileA(
+            path.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (hDevice != INVALID_HANDLE_VALUE) {
+            CloseHandle(hDevice);
+            return true;
+        }
+        return false;
+    }
+#endif
     struct stat buffer;
     return (stat(path.c_str(), &buffer) == 0);
 }
@@ -31,7 +69,7 @@ std::string WfsManager::GetErrorDescription(ConnectError error) {
         case ConnectError::DeviceNotFound:
             return "Device/partition not found or inaccessible";
         case ConnectError::DeviceOpenFailed:
-            return "Failed to open device (may need Administrator privileges)";
+            return "Failed to open device: " + g_lastErrorDetail;
         case ConnectError::NotWfsPartition:
             return "Not a Wii U WFS partition (invalid header)";
         case ConnectError::InvalidWfsVersion:
@@ -75,13 +113,60 @@ ConnectError WfsManager::Connect(const std::string& otpPath, const std::string& 
         
         devicePath_ = devicePath;
         
-        // 创建设备 (读写模式)
-        std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
-        if (!testFile.is_open()) {
+        // 获取设备大小
+        uint64_t fileSize = 0;
+#ifdef _WIN32
+        // On Windows, use CreateFile to open device and get size
+        HANDLE hDevice = CreateFileA(
+            devicePath.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (hDevice == INVALID_HANDLE_VALUE) {
+            DWORD err = GetLastError();
+            g_lastErrorDetail = "Windows error code: " + std::to_string(err);
+            if (err == 5) {
+                g_lastErrorDetail += " (Access denied - need Administrator)";
+            } else if (err == 2) {
+                g_lastErrorDetail += " (File not found)";
+            } else if (err == 32) {
+                g_lastErrorDetail += " (File in use by another process)";
+            }
             return ConnectError::DeviceOpenFailed;
         }
-        uint64_t fileSize = testFile.tellg();
-        testFile.close();
+        
+        // Use DeviceIoControl to get device size (GetFileSizeEx doesn't work for devices)
+        GET_LENGTH_INFORMATION lengthInfo;
+        DWORD bytesReturned;
+        if (DeviceIoControl(hDevice, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, 
+                           &lengthInfo, sizeof(lengthInfo), &bytesReturned, NULL)) {
+            fileSize = lengthInfo.Length.QuadPart;
+        } else {
+            // Fallback: try GetFileSizeEx
+            LARGE_INTEGER size;
+            if (GetFileSizeEx(hDevice, &size)) {
+                fileSize = size.QuadPart;
+            } else {
+                DWORD err = GetLastError();
+                g_lastErrorDetail = "Cannot determine device size, error: " + std::to_string(err);
+                CloseHandle(hDevice);
+                return ConnectError::DeviceOpenFailed;
+            }
+        }
+        CloseHandle(hDevice);
+#else
+        // On Linux, use stat
+        struct stat st;
+        if (stat(devicePath.c_str(), &st) != 0) {
+            return ConnectError::DeviceOpenFailed;
+        }
+        fileSize = st.st_size;
+#endif
+        
         uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
         
         device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);
@@ -193,13 +278,43 @@ ConnectError WfsManager::Format(const std::string& otpPath, const std::string& s
         devicePath_ = devicePath;
         deviceType_ = deviceType;
         
-        // 创建设备 (读写模式)
-        std::ifstream testFile(devicePath, std::ios::binary | std::ios::ate);
-        if (!testFile.is_open()) {
+        // 获取设备大小
+        uint64_t fileSize = 0;
+#ifdef _WIN32
+        // On Windows, use CreateFile to open device and get size
+        HANDLE hDevice = CreateFileA(
+            devicePath.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (hDevice == INVALID_HANDLE_VALUE) {
             return ConnectError::DeviceOpenFailed;
         }
-        uint64_t fileSize = testFile.tellg();
-        testFile.close();
+        
+        // Use DeviceIoControl to get device size (GetFileSizeEx doesn't work for devices)
+        GET_LENGTH_INFORMATION lengthInfo;
+        DWORD bytesReturned;
+        if (DeviceIoControl(hDevice, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, 
+                           &lengthInfo, sizeof(lengthInfo), &bytesReturned, NULL)) {
+            fileSize = lengthInfo.Length.QuadPart;
+        } else {
+            CloseHandle(hDevice);
+            return ConnectError::DeviceOpenFailed;
+        }
+        CloseHandle(hDevice);
+#else
+        // On Linux, use stat
+        struct stat st;
+        if (stat(devicePath.c_str(), &st) != 0) {
+            return ConnectError::DeviceOpenFailed;
+        }
+        fileSize = st.st_size;
+#endif
+        
         uint32_t sectorsCount = static_cast<uint32_t>(fileSize / 512);
         
         device_ = std::make_shared<FileDevice>(devicePath, 9, sectorsCount, false);

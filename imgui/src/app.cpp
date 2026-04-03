@@ -28,24 +28,30 @@ void WfsApp::EndOperation() {
 
 void WfsApp::ScanDrives() {
     drives_.clear();
+    selectedDrive_ = -1;  // Reset selection
     char buffer[256];
     GetLogicalDriveStringsA(sizeof(buffer), buffer);
     char* p = buffer;
     while (*p) {
         std::string drive(p);
-        if (GetDriveTypeA(drive.c_str()) == DRIVE_FIXED) {
+        // Only include removable drives (USB, SD cards, etc.)
+        if (GetDriveTypeA(drive.c_str()) == DRIVE_REMOVABLE) {
             drives_.push_back(drive);
         }
         p += drive.length() + 1;
     }
     if (drives_.empty()) {
-        drives_.push_back("C:\\");
+        drives_.push_back("(No removable drive found)");
     }
 }
 
 std::string WfsApp::GetSelectedDrivePath() {
     if (selectedDrive_ >= 0 && selectedDrive_ < (int)drives_.size()) {
-        return "\\\\.\\" + drives_[selectedDrive_].substr(0, 2);
+        const std::string& drive = drives_[selectedDrive_];
+        // Check if it's a valid drive path (starts with letter and colon)
+        if (drive.length() >= 2 && drive[1] == ':') {
+            return "\\\\.\\" + drive.substr(0, 2);
+        }
     }
     return "";
 }
@@ -72,6 +78,7 @@ void WfsApp::Render() {
     ImGui::End();
     
     RenderStatusBar();
+    RenderErrorDialog();
 }
 
 void WfsApp::RenderConnectPanel() {
@@ -294,7 +301,8 @@ void WfsApp::Connect() {
     // wfs_wrapper 会自动尝试 USB 和 MLC 密钥
     ConnectError error = wfs_.Connect(otpPath_, seepromPath_, devicePath);
     if (error != ConnectError::None) {
-        ShowErrorDialog(Strings::ErrConnectFailed(), Strings::TranslateError(error));
+        // Use detailed error description for better diagnostics
+        ShowErrorDialog(Strings::ErrConnectFailed(), WfsManager::GetErrorDescription(error));
         return;
     }
     
@@ -365,7 +373,7 @@ void WfsApp::Format() {
                 ConnectError error = wfs_.Format(otpPath_, seepromPath_, devicePath, deviceType);
                 
                 if (error != ConnectError::None) {
-                    ShowErrorDialog(Strings::FormatFailed(), Strings::TranslateError(error));
+                    ShowErrorDialog(Strings::FormatFailed(), WfsManager::GetErrorDescription(error));
                 } else {
                     connected_ = true;
                     currentPath_ = "\\";
@@ -529,9 +537,19 @@ void WfsApp::ExportSelected() {
 }
 
 void WfsApp::ShowErrorDialog(const std::string& title, const std::string& message) {
-    ImGui::OpenPopup(title.c_str());
-    if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("%s", message.c_str());
+    errorTitle_ = title;
+    errorMessage_ = message;
+    showErrorDialog_ = true;
+}
+
+void WfsApp::RenderErrorDialog() {
+    if (showErrorDialog_) {
+        ImGui::OpenPopup(errorTitle_.c_str());
+        showErrorDialog_ = false;
+    }
+    
+    if (ImGui::BeginPopupModal(errorTitle_.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", errorMessage_.c_str());
         ImGui::Separator();
         if (ImGui::Button(Strings::OK(), ImVec2(120, 0))) {
             ImGui::CloseCurrentPopup();
